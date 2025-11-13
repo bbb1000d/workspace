@@ -1,1421 +1,1565 @@
 export const TILE_SIZE = 32;
-const FLOOR_COLOR = '#1f2937';
-const WALL_COLOR = '#0b1220';
-const PLAYER_COLOR = '#f97316';
-const ENEMY_COLOR = '#38bdf8';
-const BULLET_COLOR = '#facc15';
-const ENEMY_BULLET_COLOR = '#c084fc';
 
 const DIRECTIONS = {
-  ArrowUp: { x: 0, y: -1 },
-  ArrowDown: { x: 0, y: 1 },
-  ArrowLeft: { x: -1, y: 0 },
-  ArrowRight: { x: 1, y: 0 },
   w: { x: 0, y: -1 },
-  s: { x: 0, y: 1 },
   a: { x: -1, y: 0 },
+  s: { x: 0, y: 1 },
   d: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowDown: { x: 0, y: 1 },
+  ArrowRight: { x: 1, y: 0 },
 };
 
-const CARDINAL_DIRECTIONS = [
-  DIRECTIONS.ArrowUp,
-  DIRECTIONS.ArrowDown,
-  DIRECTIONS.ArrowLeft,
-  DIRECTIONS.ArrowRight,
+const AIM_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const MOVE_KEYS = new Set(['w', 'a', 's', 'd']);
+
+const WORLD_PADDING_TILES = 10;
+const PLAYER_BASE_SPEED = 3.2; // tiles per second
+const PLAYER_SPRINT_SPEED = 5.6;
+const PLAYER_BASE_HEALTH = 120;
+const PLAYER_DASH_DISTANCE = 4;
+const PLAYER_DASH_COOLDOWN = 1.8;
+const PLAYER_SHOT_INTERVAL = 0.4;
+const PLAYER_BASE_DAMAGE = 12;
+const PLAYER_PROJECTILE_SPEED = 12;
+const PLAYER_PROJECTILE_LIFETIME = 2.4;
+
+const ENEMY_BASE_HEALTH = 28;
+const ENEMY_BASE_SPEED = 1.3;
+const ENEMY_SPAWN_INTERVAL = 9;
+const ENEMY_CONTACT_DAMAGE = 8;
+const ENEMY_RANGE = 11;
+const ENEMY_FIRE_INTERVAL = 3.4;
+const ENEMY_PROJECTILE_SPEED = 8;
+const ENEMY_PROJECTILE_DAMAGE = 9;
+const ENEMY_PROJECTILE_LIFETIME = 4;
+
+const PICKUP_ATTRACTION_RANGE = 3;
+const PICKUP_ATTRACTION_SPEED = 2.4;
+
+const XP_PER_LEVEL = 60;
+const LEVEL_XP_GROWTH = 25;
+
+const TILE_TYPES = {
+  grass: { color: '#18382b', variants: ['#1c3d33', '#1f4538', '#214d3c'] },
+  meadow: { color: '#244732', variants: ['#28523a', '#30593f', '#356246'] },
+  path: { color: '#5f513b', variants: ['#6a573f', '#755f43', '#816847'] },
+  sand: { color: '#8f6f43', variants: ['#987548', '#a17c4d', '#aa8352'] },
+  water: { color: '#163c54', variants: ['#1a4560', '#1f506d', '#235a79'], blocked: true },
+  stone: { color: '#3d434f', variants: ['#454b58', '#4d5360', '#555b68'], blocked: true },
+  plaza: { color: '#3c3a50', variants: ['#3f3f57', '#44455f', '#494c66'] },
+};
+
+const SCENERY_COLORS = {
+  treeTrunk: '#6b3f22',
+  treeLeaves: ['#2f6846', '#34744f', '#3a7f58'],
+  blossom: '#f6cbd1',
+  lampPost: '#fcd34d',
+  houseWall: '#f8f0e0',
+  houseRoof: '#c084fc',
+};
+
+const ENEMY_PALETTE = ['#f472b6', '#fb7185', '#60a5fa'];
+const BULLET_COLOR = '#facc15';
+const ENEMY_BULLET_COLOR = '#38bdf8';
+
+const UPGRADE_LIBRARY = [
+  {
+    id: 'rapid-fire',
+    name: 'Rapid Fire',
+    description: 'Reduce shoot cooldown by 30% and slightly boost projectile speed.',
+    apply(player) {
+      player.shootInterval *= 0.7;
+      player.projectileSpeed *= 1.15;
+    },
+  },
+  {
+    id: 'double-shot',
+    name: 'Twin Arrows',
+    description: 'Fire a second shot that fans outward for more coverage.',
+    apply(player) {
+      player.doubleShot = true;
+    },
+  },
+  {
+    id: 'dash-charge',
+    name: 'Comet Dash',
+    description: 'Dash travels farther and leaves a comet trail that damages foes.',
+    apply(player) {
+      player.dashDistance += 2;
+      player.dashTrail = true;
+    },
+  },
+  {
+    id: 'forest-blessing',
+    name: 'Forest Blessing',
+    description: 'Heal for 20 every time you level up and gain +20 max health.',
+    apply(player) {
+      player.maxHealth += 20;
+      player.health = Math.min(player.maxHealth, player.health + 20);
+      player.onLevelUpRegen = (player.onLevelUpRegen || 0) + 20;
+    },
+  },
+  {
+    id: 'aurora-shell',
+    name: 'Aurora Shell',
+    description: 'Gain a shimmering shield that blocks one hit every 20 seconds.',
+    apply(player) {
+      player.shield = {
+        cooldown: 20,
+        timer: 0,
+        active: true,
+      };
+    },
+  },
+  {
+    id: 'luminous-shot',
+    name: 'Luminous Shot',
+    description: 'Projectiles leave light orbs that slow enemies caught inside.',
+    apply(player) {
+      player.glowShots = true;
+    },
+  },
+  {
+    id: 'spirit-walk',
+    name: 'Spirit Walk',
+    description: 'Move 25% faster and glide smoothly around obstacles.',
+    apply(player) {
+      player.speed *= 1.25;
+      player.spiritWalk = true;
+    },
+  },
 ];
 
-const TILE_WALL = 1;
-const TILE_FLOOR = 0;
+const ACHIEVEMENT_LIBRARY = [
+  {
+    id: 'first-steps',
+    label: 'First Steps',
+    check: (stats) => stats.distance > 40,
+    description: 'Travel forty tiles through the valley.',
+  },
+  {
+    id: 'spark-collector',
+    label: 'Spark Collector',
+    check: (stats) => stats.upgrades >= 3,
+    description: 'Unlock three upgrades.',
+  },
+  {
+    id: 'calm-guardian',
+    label: 'Calm Guardian',
+    check: (stats) => stats.damageTaken < 50 && stats.timeAlive > 120,
+    description: 'Survive two minutes while taking minimal damage.',
+  },
+  {
+    id: 'glow-hunter',
+    label: 'Glow Hunter',
+    check: (stats) => stats.enemiesDefeated >= 12,
+    description: 'Defeat twelve luminous foes.',
+  },
+];
 
-const ENEMY_CONTACT_DAMAGE = 10;
-const ENEMY_STEP_INTERVAL = 0.5; // seconds
-const ENEMY_BASE_COUNT = 8;
+const GOALS = [
+  'Find the sunstone altar',
+  'Rescue the wandering firefly spirit',
+  'Relight the valley lamps',
+  'Gather the moonpetal blooms',
+  'Discover the hidden hot spring',
+];
 
-const PLAYER_BULLET_SPEED = 13; // tiles per second
-const PLAYER_BULLET_LIFETIME = 2.6; // seconds
-const PLAYER_BULLET_DAMAGE = 1;
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
-const ENEMY_BASE_HEALTH = 3;
-const ENEMY_PROJECTILE_SPEED = 9;
-const ENEMY_PROJECTILE_LIFETIME = 4;
-const ENEMY_PROJECTILE_DAMAGE = 14;
-const ENEMY_MIN_SHOT_INTERVAL = 1.6;
-const ENEMY_MAX_SHOT_INTERVAL = 3.2;
-const ENEMY_VIEW_DISTANCE = 12;
+function lerp(start, end, t) {
+  return start + (end - start) * t;
+}
 
-const DASH_DISTANCE_DEFAULT = 3; // tiles
-const DASH_COOLDOWN = 1.4; // seconds
-const SHOOT_COOLDOWN = 0.25; // seconds
+function randRange(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function randInt(min, max) {
+  return Math.floor(randRange(min, max + 1));
+}
+
+function pick(array) {
+  return array[randInt(0, array.length - 1)];
+}
+
+function vectorLength(v) {
+  return Math.hypot(v.x, v.y);
+}
+
+function normalize(v) {
+  const len = vectorLength(v);
+  if (len === 0) return { x: 0, y: 0 };
+  return { x: v.x / len, y: v.y / len };
+}
 
 class InputHandler {
-  #directionListeners = new Set();
-  #actionListeners = new Set();
+  #pressed = new Set();
+  #aim = new Set();
+  #shootListeners = new Set();
+  #dashListeners = new Set();
+  #pauseListeners = new Set();
 
   constructor() {
-    window.addEventListener('keydown', (event) => {
-      if (event.defaultPrevented) return;
-      const key = event.key;
-      const direction = DIRECTIONS[key];
-      if (direction) {
-        event.preventDefault();
-        this.#directionListeners.forEach((listener) => listener(direction));
-        return;
-      }
-
-      if (key === ' ') {
-        event.preventDefault();
-        this.#actionListeners.forEach((listener) =>
-          listener({ type: 'shoot' })
-        );
-        return;
-      }
-
-      if (key === 'e' || key === 'E') {
-        event.preventDefault();
-        this.#actionListeners.forEach((listener) => listener({ type: 'dash' }));
-      }
-    });
+    window.addEventListener('keydown', (event) => this.#handleKeyDown(event));
+    window.addEventListener('keyup', (event) => this.#handleKeyUp(event));
   }
 
-  onDirection(callback) {
-    this.#directionListeners.add(callback);
-    return () => this.#directionListeners.delete(callback);
+  #handleKeyDown(event) {
+    const key = event.key;
+    if (MOVE_KEYS.has(key)) {
+      this.#pressed.add(key);
+      event.preventDefault();
+    }
+
+    if (AIM_KEYS.has(key)) {
+      this.#aim.add(key);
+      event.preventDefault();
+    }
+
+    if (key === ' ') {
+      event.preventDefault();
+      this.#shootListeners.forEach((cb) => cb());
+    }
+
+    if (key === 'e' || key === 'E') {
+      event.preventDefault();
+      this.#dashListeners.forEach((cb) => cb());
+    }
+
+    if (key === 'Escape') {
+      event.preventDefault();
+      this.#pauseListeners.forEach((cb) => cb());
+    }
   }
 
-  onAction(callback) {
-    this.#actionListeners.add(callback);
-    return () => this.#actionListeners.delete(callback);
+  #handleKeyUp(event) {
+    const key = event.key;
+    if (MOVE_KEYS.has(key)) {
+      this.#pressed.delete(key);
+      event.preventDefault();
+    }
+
+    if (AIM_KEYS.has(key)) {
+      this.#aim.delete(key);
+      event.preventDefault();
+    }
+  }
+
+  getMovementVector() {
+    let vx = 0;
+    let vy = 0;
+    for (const key of this.#pressed) {
+      vx += DIRECTIONS[key].x;
+      vy += DIRECTIONS[key].y;
+    }
+    if (vx === 0 && vy === 0) return { x: 0, y: 0 };
+    return normalize({ x: vx, y: vy });
+  }
+
+  getAimVector(fallback) {
+    let vx = 0;
+    let vy = 0;
+    for (const key of this.#aim) {
+      vx += DIRECTIONS[key].x;
+      vy += DIRECTIONS[key].y;
+    }
+    if (vx === 0 && vy === 0) {
+      return fallback || { x: 0, y: -1 };
+    }
+    return normalize({ x: vx, y: vy });
+  }
+
+  onShoot(callback) {
+    this.#shootListeners.add(callback);
+    return () => this.#shootListeners.delete(callback);
+  }
+
+  onDash(callback) {
+    this.#dashListeners.add(callback);
+    return () => this.#dashListeners.delete(callback);
+  }
+
+  onPause(callback) {
+    this.#pauseListeners.add(callback);
+    return () => this.#pauseListeners.delete(callback);
   }
 }
 
-class Renderer {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.context = canvas.getContext('2d');
-    if (!this.context) {
-      throw new Error('Canvas 2D context unavailable.');
-    }
-  }
-
-  clear() {
-    this.context.fillStyle = '#020617';
-    this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
-  }
-
-  drawTile(x, y, color) {
-    this.context.fillStyle = color;
-    this.context.fillRect(
-      x * TILE_SIZE,
-      y * TILE_SIZE,
-      TILE_SIZE - 1,
-      TILE_SIZE - 1
-    );
-  }
-
-  drawPlayer(player) {
-    const { x, y } = player.position;
-    this.context.fillStyle = PLAYER_COLOR;
-    this.context.beginPath();
-    this.context.arc(
-      x * TILE_SIZE + TILE_SIZE / 2,
-      y * TILE_SIZE + TILE_SIZE / 2,
-      TILE_SIZE * 0.35,
-      0,
-      Math.PI * 2
-    );
-    this.context.fill();
-    this.context.strokeStyle = '#fb923c';
-    this.context.lineWidth = 2;
-    this.context.stroke();
-  }
-
-  drawEnemy(enemy) {
-    const { x, y } = enemy.position;
-    this.context.fillStyle = ENEMY_COLOR;
-    this.context.beginPath();
-    this.context.arc(
-      x * TILE_SIZE + TILE_SIZE / 2,
-      y * TILE_SIZE + TILE_SIZE / 2,
-      TILE_SIZE * 0.3,
-      0,
-      Math.PI * 2
-    );
-    this.context.fill();
-  }
-
-  drawBullet(bullet) {
-    this.context.fillStyle = BULLET_COLOR;
-    this.context.beginPath();
-    this.context.arc(
-      bullet.x * TILE_SIZE,
-      bullet.y * TILE_SIZE,
-      TILE_SIZE * 0.15,
-      0,
-      Math.PI * 2
-    );
-    this.context.fill();
-  }
-
-  drawEnemyProjectile(projectile) {
-    this.context.fillStyle = ENEMY_BULLET_COLOR;
-    this.context.beginPath();
-    this.context.arc(
-      projectile.x * TILE_SIZE,
-      projectile.y * TILE_SIZE,
-      TILE_SIZE * 0.18,
-      0,
-      Math.PI * 2
-    );
-    this.context.fill();
-  }
-}
-
-function createDungeon(width, height) {
-  const grid = Array.from({ length: height }, () =>
-    Array.from({ length: width }, () => TILE_WALL)
-  );
-
-  const rooms = [];
-  const minRoomSize = 5;
-  const maxRoomSize = 12;
-  const roomAttempts = Math.max(32, Math.floor((width * height) / 24));
-
-  const carveTile = (x, y) => {
-    if (x <= 0 || y <= 0 || x >= width - 1 || y >= height - 1) {
-      return;
-    }
-    grid[y][x] = TILE_FLOOR;
-  };
-
-  const carveRoom = (room) => {
-    for (let y = room.y; y < room.y + room.height; y += 1) {
-      for (let x = room.x; x < room.x + room.width; x += 1) {
-        carveTile(x, y);
-      }
-    }
-  };
-
-  const carveCorridor = (from, to) => {
-    const horizontalFirst = Math.random() < 0.5;
-    const carveHorizontal = (startX, endX, y) => {
-      const [minX, maxX] =
-        startX < endX ? [startX, endX] : [endX, startX];
-      for (let x = minX; x <= maxX; x += 1) {
-        carveTile(x, y);
-        if (Math.random() < 0.55) carveTile(x, y + 1);
-      }
-    };
-    const carveVertical = (startY, endY, x) => {
-      const [minY, maxY] =
-        startY < endY ? [startY, endY] : [endY, startY];
-      for (let y = minY; y <= maxY; y += 1) {
-        carveTile(x, y);
-        if (Math.random() < 0.55) carveTile(x + 1, y);
-      }
-    };
-
-    if (horizontalFirst) {
-      carveHorizontal(from.x, to.x, from.y);
-      carveVertical(from.y, to.y, to.x);
-    } else {
-      carveVertical(from.y, to.y, from.x);
-      carveHorizontal(from.x, to.x, to.y);
-    }
-  };
-
-  const intersects = (roomA, roomB) => {
-    return !(
-      roomA.x + roomA.width + 1 < roomB.x ||
-      roomB.x + roomB.width + 1 < roomA.x ||
-      roomA.y + roomA.height + 1 < roomB.y ||
-      roomB.y + roomB.height + 1 < roomA.y
-    );
-  };
-
-  for (let attempt = 0; attempt < roomAttempts; attempt += 1) {
-    const widthRange = maxRoomSize - minRoomSize;
-    const roomWidth =
-      minRoomSize + Math.floor(Math.random() * (widthRange + 1));
-    const roomHeight =
-      minRoomSize + Math.floor(Math.random() * (widthRange + 1));
-    const roomX = Math.floor(Math.random() * (width - roomWidth - 2)) + 1;
-    const roomY = Math.floor(Math.random() * (height - roomHeight - 2)) + 1;
-
-    const newRoom = {
-      x: roomX,
-      y: roomY,
-      width: roomWidth,
-      height: roomHeight,
-      center: {
-        x: Math.floor(roomX + roomWidth / 2),
-        y: Math.floor(roomY + roomHeight / 2),
-      },
-    };
-
-    if (rooms.some((room) => intersects(room, newRoom))) {
-      continue;
-    }
-
-    carveRoom(newRoom);
-    rooms.push(newRoom);
-  }
-
-  if (rooms.length === 0) {
-    carveTile(Math.floor(width / 2), Math.floor(height / 2));
-    return grid;
-  }
-
-  rooms.sort((a, b) => a.center.x - b.center.x);
-  for (let i = 1; i < rooms.length; i += 1) {
-    carveCorridor(rooms[i - 1].center, rooms[i].center);
-  }
-
-  const extraLinks = Math.min(rooms.length, 6);
-  for (let i = 0; i < extraLinks; i += 1) {
-    const roomA = rooms[Math.floor(Math.random() * rooms.length)];
-    const roomB = rooms[Math.floor(Math.random() * rooms.length)];
-    if (roomA !== roomB) {
-      carveCorridor(roomA.center, roomB.center);
-    }
-  }
-
-  const carveCavern = (start, steps) => {
-    let current = { ...start };
-    for (let i = 0; i < steps; i += 1) {
-      carveTile(current.x, current.y);
-      const direction = CARDINAL_DIRECTIONS[
-        Math.floor(Math.random() * CARDINAL_DIRECTIONS.length)
-      ];
-      current = {
-        x: Math.min(Math.max(current.x + direction.x, 1), width - 2),
-        y: Math.min(Math.max(current.y + direction.y, 1), height - 2),
-      };
-      if (Math.random() < 0.35) {
-        carveTile(current.x + 1, current.y);
-        carveTile(current.x, current.y + 1);
-      }
-    }
-  };
-
-  for (let i = 0; i < rooms.length; i += 1) {
-    if (Math.random() < 0.5) {
-      carveCavern(rooms[i].center, 24 + Math.floor(Math.random() * 24));
-    }
-  }
-
-  const visited = Array.from({ length: height }, () =>
-    Array.from({ length: width }, () => false)
-  );
-  const queue = [];
-  queue.push(rooms[0].center);
-  visited[rooms[0].center.y][rooms[0].center.x] = true;
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    for (const direction of CARDINAL_DIRECTIONS) {
-      const nx = current.x + direction.x;
-      const ny = current.y + direction.y;
-      if (
-        nx <= 0 ||
-        ny <= 0 ||
-        nx >= width - 1 ||
-        ny >= height - 1 ||
-        visited[ny][nx] ||
-        grid[ny][nx] !== TILE_FLOOR
-      ) {
-        continue;
-      }
-      visited[ny][nx] = true;
-      queue.push({ x: nx, y: ny });
-    }
-  }
-
-  for (let y = 1; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 1; x += 1) {
-      if (grid[y][x] === TILE_FLOOR && !visited[y][x]) {
-        grid[y][x] = TILE_WALL;
-      }
-    }
-  }
-
-  return grid;
-}
-
-class Log {
-  constructor(element) {
+class EventLog {
+  constructor(element, maxEntries = 8) {
     this.element = element;
+    this.maxEntries = maxEntries;
     this.entries = [];
   }
 
-  message(text) {
-    const timestamp = new Date().toLocaleTimeString([], {
+  push(message) {
+    const time = new Date().toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
+      hour12: false,
     });
-    const entry = `${timestamp} — ${text}`;
-    this.entries.unshift(entry);
-    this.entries = this.entries.slice(0, 10);
+    this.entries.unshift({ message, time });
+    this.entries = this.entries.slice(0, this.maxEntries);
+    this.render();
+  }
 
+  render() {
+    if (!this.element) return;
     this.element.innerHTML = '';
-    for (const message of this.entries) {
-      const item = document.createElement('li');
-      item.textContent = message;
-      this.element.appendChild(item);
+    for (const entry of this.entries) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${entry.time}</strong> ${entry.message}`;
+      this.element.appendChild(li);
     }
   }
 }
 
-class Entity {
-  constructor({ position }) {
-    this.position = { ...position };
+class UIController {
+  constructor(ui) {
+    this.ui = ui;
   }
 
-  move(dx, dy) {
-    this.position.x += dx;
-    this.position.y += dy;
+  setHealth(current, max) {
+    const clamped = clamp(current, 0, max);
+    this.ui.healthValue.textContent = `${Math.round(clamped)} / ${Math.round(max)}`;
+    const ratio = max === 0 ? 0 : (clamped / max) * 100;
+    this.ui.healthFill.style.width = `${ratio}%`;
+    this.ui.healthFill.parentElement?.setAttribute('aria-valuenow', `${Math.round(ratio)}`);
+  }
+
+  setExperience(level, current, required) {
+    this.ui.progressValue.textContent = `Level ${level}`;
+    const ratio = required === 0 ? 0 : clamp((current / required) * 100, 0, 100);
+    this.ui.progressFill.style.width = `${ratio}%`;
+    this.ui.progressFill.parentElement?.setAttribute('aria-valuenow', `${Math.round(ratio)}`);
+  }
+
+  setSkillPoints(points) {
+    this.ui.skillPointsValue.textContent = `${points}`;
+  }
+
+  setGoal(text) {
+    this.ui.goalValue.textContent = text;
+  }
+
+  setUpgrades(upgrades) {
+    this.ui.skillList.innerHTML = '';
+    if (upgrades.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'No sparks yet. Level up to choose one!';
+      this.ui.skillList.appendChild(li);
+      return;
+    }
+    for (const upgrade of upgrades) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${upgrade.name}</strong><br/>${upgrade.description}`;
+      this.ui.skillList.appendChild(li);
+    }
+  }
+
+  setAchievements(achievements) {
+    this.ui.achievementList.innerHTML = '';
+    if (achievements.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'Discover hidden feats to fill this list.';
+      this.ui.achievementList.appendChild(li);
+      return;
+    }
+    for (const achievement of achievements) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${achievement.label}</strong><br/>${achievement.description}`;
+      this.ui.achievementList.appendChild(li);
+    }
+  }
+
+  setMapClues(clues) {
+    this.ui.mapInfo.innerHTML = '';
+    for (const clue of clues) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${clue.title}</strong><br/>${clue.description}`;
+      this.ui.mapInfo.appendChild(li);
+    }
+  }
+
+  showMenu(show) {
+    this.ui.pauseMenu.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  showLevelOverlay(show) {
+    this.ui.levelOverlay.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  showToast(message) {
+    const toast = this.ui.toast;
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    toast.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => {
+      toast.classList.remove('show');
+      toast.classList.add('hidden');
+    }, 2400);
+  }
+
+  renderUpgradeChoices(choices, onSelect) {
+    this.ui.upgradeOptions.innerHTML = '';
+    if (choices.length === 0) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No sparks available just yet. Keep exploring!';
+      this.ui.upgradeOptions.appendChild(empty);
+      return;
+    }
+    for (const choice of choices) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'upgrade-option';
+      button.innerHTML = `<h3>${choice.name}</h3><p>${choice.description}</p>`;
+      button.addEventListener('click', () => onSelect(choice));
+      this.ui.upgradeOptions.appendChild(button);
+    }
+    const firstButton = this.ui.upgradeOptions.querySelector('button');
+    firstButton?.focus();
+  }
+
+  clearUpgradeChoices() {
+    this.ui.upgradeOptions.innerHTML = '';
+  }
+
+  bindSkip(handler) {
+    this.ui.skipUpgrade.onclick = handler;
   }
 }
 
-class Enemy extends Entity {
-  constructor({ position, tier = 1 }) {
-    super({ position });
-    this.tier = tier;
-    this.maxHealth = ENEMY_BASE_HEALTH + (tier - 1);
-    this.health = this.maxHealth;
-    this.resetCooldown();
-    this.slowTimer = 0;
+class ParticleSystem {
+  constructor() {
+    this.particles = [];
   }
 
-  resetCooldown() {
-    this.shotCooldown =
-      ENEMY_MIN_SHOT_INTERVAL +
-      Math.random() * (ENEMY_MAX_SHOT_INTERVAL - ENEMY_MIN_SHOT_INTERVAL);
+  spawn(point, options) {
+    this.particles.push({
+      x: point.x,
+      y: point.y,
+      vx: options.vx ?? randRange(-0.5, 0.5),
+      vy: options.vy ?? randRange(-0.5, 0.5),
+      radius: options.radius ?? randRange(0.1, 0.25),
+      life: options.life ?? randRange(0.5, 1.2),
+      color: options.color ?? '#ffffff',
+    });
   }
 
-  tickCooldown(deltaSeconds) {
-    this.shotCooldown -= deltaSeconds;
+  update(dt) {
+    this.particles = this.particles
+      .map((p) => ({ ...p, x: p.x + p.vx * dt, y: p.y + p.vy * dt, life: p.life - dt }))
+      .filter((p) => p.life > 0);
   }
 
-  readyToShoot() {
-    return this.shotCooldown <= 0;
-  }
-
-  takeDamage(amount) {
-    this.health = Math.max(0, this.health - amount);
-    return this.health > 0;
-  }
-}
-
-class Player extends Entity {
-  constructor({ position }) {
-    super({ position });
-    this.maxHealth = 100;
-    this.health = this.maxHealth;
-    this.level = 1;
-    this.xp = 0;
-    this.nextLevelXp = 100;
-    this.totalXp = 0;
-    this.skillPoints = 0;
-    this.lastDirection = { x: 0, y: -1 };
-    this.invulnerabilityTimer = 0;
-    this.bulletSpeedBonus = 0;
-    this.projectileDamage = PLAYER_BULLET_DAMAGE;
-  }
-
-  takeDamage(amount) {
-    if (this.invulnerabilityTimer > 0) {
-      return true;
-    }
-    this.health = Math.max(0, this.health - amount);
-    this.invulnerabilityTimer = 0.6;
-    return this.health > 0;
-  }
-
-  grantXp(amount) {
-    this.totalXp += amount;
-    this.xp += amount;
-    let leveledUp = false;
-    while (this.xp >= this.nextLevelXp) {
-      this.xp -= this.nextLevelXp;
-      this.level += 1;
-      this.skillPoints += 1;
-      this.nextLevelXp = Math.floor(this.nextLevelXp * 1.4);
-      leveledUp = true;
-    }
-    return leveledUp;
-  }
-
-  update(deltaSeconds) {
-    if (this.invulnerabilityTimer > 0) {
-      this.invulnerabilityTimer = Math.max(
+  draw(context) {
+    for (const particle of this.particles) {
+      const alpha = clamp(particle.life, 0, 1);
+      context.fillStyle = particle.color;
+      context.globalAlpha = alpha;
+      context.beginPath();
+      context.arc(
+        particle.x * TILE_SIZE,
+        particle.y * TILE_SIZE,
+        particle.radius * TILE_SIZE,
         0,
-        this.invulnerabilityTimer - deltaSeconds
+        Math.PI * 2
       );
+      context.fill();
+      context.globalAlpha = 1;
+    }
+  }
+}
+
+class World {
+  constructor(width, height) {
+    this.width = width;
+    this.height = height;
+    this.tiles = Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => ({ type: 'grass', variant: 0 }))
+    );
+    this.decorations = [];
+    this.signs = [];
+    this.lamps = [];
+    this.spawnPoint = { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+    this.enemySpawns = [];
+  }
+
+  static generate(width, height) {
+    const world = new World(width, height);
+    world.#generateTerrain();
+    world.#placeDecorations();
+    world.#placePointsOfInterest();
+    return world;
+  }
+
+  #setTile(x, y, type) {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+    const variants = TILE_TYPES[type]?.variants ?? [TILE_TYPES[type]?.color];
+    this.tiles[y][x] = {
+      type,
+      variant: randInt(0, variants.length - 1),
+    };
+  }
+
+  getTile(x, y) {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) {
+      return { type: 'stone', variant: 0 };
+    }
+    return this.tiles[y][x];
+  }
+
+  isWalkable(x, y) {
+    const tile = this.getTile(Math.floor(x), Math.floor(y));
+    if (!tile) return false;
+    const info = TILE_TYPES[tile.type];
+    return !(info?.blocked ?? false);
+  }
+
+  #generateTerrain() {
+    // Base layers: meadow gradients and river
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const distanceToCenter = Math.abs(y - this.height / 2);
+        const type = distanceToCenter < this.height / 3 ? 'meadow' : 'grass';
+        this.#setTile(x, y, type);
+      }
+    }
+
+    // Winding path connecting spawn to outskirts
+    let cx = randInt(Math.floor(this.width * 0.2), Math.floor(this.width * 0.8));
+    let cy = randInt(Math.floor(this.height * 0.2), Math.floor(this.height * 0.8));
+    this.spawnPoint = { x: cx, y: cy };
+
+    const target = {
+      x: randInt(Math.floor(this.width * 0.1), Math.floor(this.width * 0.9)),
+      y: randInt(Math.floor(this.height * 0.1), Math.floor(this.height * 0.9)),
+    };
+
+    for (let i = 0; i < this.width * 3; i += 1) {
+      this.#setTile(cx, cy, 'path');
+      if (Math.random() < 0.25) {
+        this.#setTile(cx + 1, cy, 'path');
+        this.#setTile(cx, cy + 1, 'path');
+      }
+      const dx = Math.sign(target.x - cx) + randInt(-1, 1);
+      const dy = Math.sign(target.y - cy) + randInt(-1, 1);
+      cx = clamp(cx + dx, 2, this.width - 3);
+      cy = clamp(cy + dy, 2, this.height - 3);
+      if (Math.hypot(cx - target.x, cy - target.y) < 2) break;
+    }
+
+    // River meandering top to bottom
+    let rx = randInt(Math.floor(this.width * 0.2), Math.floor(this.width * 0.4));
+    for (let y = 0; y < this.height; y += 1) {
+      const width = 2 + Math.floor(Math.sin(y / 6) * 2 + Math.random() * 2);
+      for (let x = -width; x <= width; x += 1) {
+        this.#setTile(clamp(rx + x, 0, this.width - 1), y, 'water');
+      }
+      rx = clamp(rx + randInt(-1, 1), 2, this.width - 3);
+    }
+
+    // Plaza near spawn
+    for (let y = -2; y <= 2; y += 1) {
+      for (let x = -2; x <= 2; x += 1) {
+        this.#setTile(this.spawnPoint.x + x, this.spawnPoint.y + y, 'plaza');
+      }
+    }
+
+    // Sandy shore near river edges
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        if (this.getTile(x, y).type === 'water') {
+          for (const dir of Object.values(DIRECTIONS)) {
+            const nx = x + dir.x;
+            const ny = y + dir.y;
+            const tile = this.getTile(nx, ny);
+            if (tile.type !== 'water' && tile.type !== 'sand') {
+              this.#setTile(nx, ny, 'sand');
+            }
+          }
+        }
+      }
     }
   }
 
-  heal(amount) {
-    this.health = Math.min(this.maxHealth, this.health + amount);
+  #placeDecorations() {
+    for (let i = 0; i < this.width * this.height * 0.04; i += 1) {
+      const x = randInt(2, this.width - 3);
+      const y = randInt(2, this.height - 3);
+      const tile = this.getTile(x, y);
+      if (tile.type === 'grass' || tile.type === 'meadow') {
+        this.decorations.push({ x, y, type: 'tree' });
+        if (Math.random() < 0.15) {
+          this.decorations.push({ x, y, type: 'blossom' });
+        }
+      }
+    }
+
+    for (let i = 0; i < this.width * this.height * 0.02; i += 1) {
+      const x = randInt(3, this.width - 4);
+      const y = randInt(3, this.height - 4);
+      const tile = this.getTile(x, y);
+      if (tile.type === 'grass' || tile.type === 'meadow') {
+        this.decorations.push({ x, y, type: 'rock' });
+        this.#setTile(x, y, 'stone');
+      }
+    }
   }
 
-  healthRatio() {
-    return this.health / this.maxHealth;
-  }
+  #placePointsOfInterest() {
+    const houseCount = 3 + randInt(0, 2);
+    for (let i = 0; i < houseCount; i += 1) {
+      const hx = randInt(4, this.width - 6);
+      const hy = randInt(4, this.height - 6);
+      for (let y = -1; y <= 1; y += 1) {
+        for (let x = -1; x <= 1; x += 1) {
+          this.#setTile(hx + x, hy + y, 'plaza');
+        }
+      }
+      this.decorations.push({ x: hx, y: hy, type: 'house' });
+      this.lamps.push({ x: hx + 2.2, y: hy - 1.4 });
+      this.enemySpawns.push({ x: hx + randRange(-2, 2), y: hy + randRange(-2, 2) });
+    }
 
-  progressRatio() {
-    return this.xp / this.nextLevelXp;
+    const signTexts = [
+      { title: 'Aurora Plaza', description: 'Safe haven. Gather upgrades here.' },
+      { title: 'Moonpetal Meadow', description: 'Slower foes, gather glowing petals.' },
+      { title: 'Luminous Brook', description: 'Water slows everything – watch your dash!' },
+      { title: 'Sunstone Altar', description: 'Follow the path east to reach the altar.' },
+    ];
+
+    for (const info of signTexts) {
+      const x = clamp(
+        this.spawnPoint.x + randInt(-12, 12),
+        4,
+        this.width - 5
+      );
+      const y = clamp(
+        this.spawnPoint.y + randInt(-12, 12),
+        4,
+        this.height - 5
+      );
+      this.signs.push({ x, y, text: info.title });
+    }
+
+    this.mapClues = signTexts.map((entry) => ({ ...entry }));
   }
+}
+
+function createProjectile({
+  x,
+  y,
+  direction,
+  speed,
+  damage,
+  lifetime,
+  friendly,
+  spread = 0,
+  slowField = false,
+}) {
+  const angle = Math.atan2(direction.y, direction.x) + spread;
+  return {
+    x,
+    y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    damage,
+    lifetime,
+    age: 0,
+    friendly,
+    slowField,
+  };
 }
 
 export class RoguelikeGame {
-  constructor({ canvas, log, ui }) {
+  constructor({ canvas, ui }) {
     this.canvas = canvas;
-    this.log = new Log(log);
-    this.renderer = new Renderer(canvas);
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Canvas 2D context unavailable.');
+    }
+    this.context = context;
     this.input = new InputHandler();
-
-    this.mapWidth = Math.floor(canvas.width / TILE_SIZE);
-    this.mapHeight = Math.floor(canvas.height / TILE_SIZE);
-    this.map = createDungeon(this.mapWidth, this.mapHeight);
-
-    const spawn = this.findSpawn();
-    this.player = new Player({ position: spawn });
-
-    this.ui = ui;
-
+    this.ui = new UIController(ui);
+    this.ui.bindSkip(() => this.skipUpgradeSelection());
+    this.log = new EventLog(ui.log);
+    this.particles = new ParticleSystem();
+    this.lastTime = 0;
+    this.state = 'loading';
     this.stats = {
+      distance: 0,
       enemiesDefeated: 0,
-      shotsFired: 0,
-      shotsHit: 0,
-      dashesUsed: 0,
-      hitsTaken: 0,
-      wavesCleared: 0,
+      damageTaken: 0,
+      upgrades: 0,
+      timeAlive: 0,
     };
 
-    this.wave = 1;
-    this.baseEnemyCount = ENEMY_BASE_COUNT;
-    this.dashDistance = DASH_DISTANCE_DEFAULT;
-    this.dashCooldownDuration = DASH_COOLDOWN;
-    this.dashCooldown = 0;
-    this.dashInvulnerabilityBonus = 0;
-    this.damageReduction = 0;
-    this.enemySlowDuration = 0;
+    this.input.onShoot(() => this.#handleShoot());
+    this.input.onDash(() => this.#handleDash());
+    this.input.onPause(() => this.toggleMenu());
 
-    this.skills = [
-      {
-        key: 'rapidVolley',
-        name: 'Rapid Volley',
-        description: 'Projectiles travel 40% faster.',
-        tier: 1,
-        cost: 1,
-        prerequisites: [],
-        unlocked: false,
-        apply: () => {
-          this.player.bulletSpeedBonus += 5;
-        },
-      },
-      {
-        key: 'vitalSurge',
-        name: 'Vital Surge',
-        description: 'Max health increases by 35 and you heal fully.',
-        tier: 1,
-        cost: 1,
-        prerequisites: [],
-        unlocked: false,
-        apply: () => {
-          this.player.maxHealth += 35;
-          this.player.heal(this.player.maxHealth);
-        },
-      },
-      {
-        key: 'kineticOverdrive',
-        name: 'Kinetic Overdrive',
-        description: 'Dash distance +1 and cooldown reduced.',
-        tier: 1,
-        cost: 1,
-        prerequisites: [],
-        unlocked: false,
-        apply: () => {
-          this.dashDistance += 1;
-          this.adjustDashCooldown(-0.25);
-        },
-      },
-      {
-        key: 'piercingRounds',
-        name: 'Piercing Rounds',
-        description: 'Shots deal double damage.',
-        tier: 2,
-        cost: 2,
-        prerequisites: ['rapidVolley'],
-        unlocked: false,
-        apply: () => {
-          this.player.projectileDamage += 1;
-        },
-      },
-      {
-        key: 'chronoShift',
-        name: 'Chrono Shift',
-        description: 'Dashing grants 1s of invulnerability.',
-        tier: 2,
-        cost: 2,
-        prerequisites: ['kineticOverdrive'],
-        unlocked: false,
-        apply: () => {
-          this.dashInvulnerabilityBonus += 1;
-        },
-      },
-      {
-        key: 'aegisMatrix',
-        name: 'Aegis Matrix',
-        description: 'Incoming damage reduced by 20%.',
-        tier: 2,
-        cost: 2,
-        prerequisites: ['vitalSurge'],
-        unlocked: false,
-        apply: () => {
-          this.damageReduction = Math.min(0.4, this.damageReduction + 0.2);
-        },
-      },
-      {
-        key: 'solarFlare',
-        name: 'Solar Flare',
-        description: 'Shots ignite, gaining speed and damage.',
-        tier: 3,
-        cost: 3,
-        prerequisites: ['piercingRounds'],
-        unlocked: false,
-        apply: () => {
-          this.player.projectileDamage += 1;
-          this.player.bulletSpeedBonus += 4;
-        },
-      },
-      {
-        key: 'stasisField',
-        name: 'Stasis Field',
-        description: 'Enemies slow briefly after being hit.',
-        tier: 3,
-        cost: 3,
-        prerequisites: ['chronoShift'],
-        unlocked: false,
-        apply: () => {
-          this.enemySlowDuration = (this.enemySlowDuration || 0) + 0.4;
-        },
-      },
-    ];
-
-    this.achievements = [
-      {
-        key: 'firstBlood',
-        name: 'First Blood',
-        description: 'Defeat your first foe.',
-        target: 1,
-        unlocked: false,
-        progress: () => this.stats.enemiesDefeated,
-      },
-      {
-        key: 'crowdControl',
-        name: 'Crowd Control',
-        description: 'Defeat 25 enemies across waves.',
-        target: 25,
-        unlocked: false,
-        progress: () => this.stats.enemiesDefeated,
-      },
-      {
-        key: 'blinkMaster',
-        name: 'Blink Master',
-        description: 'Use dash 15 times.',
-        target: 15,
-        unlocked: false,
-        progress: () => this.stats.dashesUsed,
-      },
-      {
-        key: 'arcaneResilience',
-        name: 'Arcane Resilience',
-        description: 'Survive 12 enemy hits.',
-        target: 12,
-        unlocked: false,
-        progress: () => this.stats.hitsTaken,
-      },
-      {
-        key: 'waveBreaker',
-        name: 'Wave Breaker',
-        description: 'Endure 5 assault waves.',
-        target: 5,
-        unlocked: false,
-        progress: () => this.stats.wavesCleared,
-      },
-    ];
-
-    this.initializeSkillTree();
-    this.initializeAchievements();
-
-    this.enemies = this.spawnEnemies(this.baseEnemyCount, this.wave);
-    this.bullets = [];
-    this.enemyProjectiles = [];
-
-    this.enemyStepTimer = 0;
-    this.shootCooldown = 0;
-    this.lastTimestamp = null;
-    this.animationHandle = null;
-    this.gameOver = false;
+    this.upgradePool = [...UPGRADE_LIBRARY];
+    this.achievements = new Set();
+    this.goal = pick(GOALS);
   }
 
   start() {
-    this.unsubscribeDirection = this.input.onDirection((direction) =>
-      this.handleMove(direction)
-    );
-    this.unsubscribeAction = this.input.onAction((action) =>
-      this.handleAction(action)
-    );
-    this.log.message('You awaken in an unfamiliar dungeon.');
-    this.draw();
-    this.updateUi();
-    const loop = (timestamp) => {
-      if (!this.lastTimestamp) {
-        this.lastTimestamp = timestamp;
-      }
-      const deltaSeconds = (timestamp - this.lastTimestamp) / 1000;
-      this.lastTimestamp = timestamp;
-      this.update(deltaSeconds);
-      this.animationHandle = window.requestAnimationFrame(loop);
+    this.restart();
+    this.state = 'running';
+    requestAnimationFrame((time) => this.#loop(time));
+  }
+
+  restart() {
+    this.state = 'running';
+    this.ui.showMenu(false);
+    this.ui.showLevelOverlay(false);
+    this.ui.clearUpgradeChoices();
+    this.upgradeChoices = [];
+    this.pendingSkillPoints = 0;
+    this.upgradePool = [...UPGRADE_LIBRARY];
+    this.achievements.clear();
+    this.goal = pick(GOALS);
+    this.stats = {
+      distance: 0,
+      enemiesDefeated: 0,
+      damageTaken: 0,
+      upgrades: 0,
+      timeAlive: 0,
     };
-    this.animationHandle = window.requestAnimationFrame(loop);
+
+    this.world = World.generate(
+      Math.floor(this.canvas.width / TILE_SIZE) + WORLD_PADDING_TILES,
+      Math.floor(this.canvas.height / TILE_SIZE) + WORLD_PADDING_TILES
+    );
+
+    this.player = {
+      x: this.world.spawnPoint.x + 0.5,
+      y: this.world.spawnPoint.y + 0.5,
+      vx: 0,
+      vy: 0,
+      health: PLAYER_BASE_HEALTH,
+      maxHealth: PLAYER_BASE_HEALTH,
+      level: 1,
+      experience: 0,
+      experienceToLevel: XP_PER_LEVEL,
+      shootInterval: PLAYER_SHOT_INTERVAL,
+      shootTimer: 0,
+      dashCooldown: PLAYER_DASH_COOLDOWN,
+      dashTimer: 0,
+      dashDistance: PLAYER_DASH_DISTANCE,
+      projectileSpeed: PLAYER_PROJECTILE_SPEED,
+      projectileLifetime: PLAYER_PROJECTILE_LIFETIME,
+      damage: PLAYER_BASE_DAMAGE,
+      doubleShot: false,
+      dashTrail: false,
+      glowShots: false,
+      spiritWalk: false,
+      shield: null,
+      onLevelUpRegen: 0,
+      speed: PLAYER_BASE_SPEED,
+      aim: { x: 0, y: -1 },
+      upgrades: [],
+    };
+
+    this.projectiles = [];
+    this.enemyProjectiles = [];
+    this.enemies = [];
+    this.pickups = [];
+    this.particles = new ParticleSystem();
+    this.spawnTimer = ENEMY_SPAWN_INTERVAL;
+
+    this.ui.setHealth(this.player.health, this.player.maxHealth);
+    this.ui.setExperience(
+      this.player.level,
+      this.player.experience,
+      this.player.experienceToLevel
+    );
+    this.ui.setSkillPoints(0);
+    this.ui.setUpgrades([]);
+    this.ui.setAchievements([]);
+    this.ui.setGoal(this.goal);
+    this.ui.setMapClues(this.world.mapClues);
+    this.log.push('You feel a calm wind guiding your steps.');
   }
 
-  stop() {
-    if (this.unsubscribeDirection) {
-      this.unsubscribeDirection();
-    }
-    if (this.unsubscribeAction) {
-      this.unsubscribeAction();
-    }
-    if (this.animationHandle) {
-      window.cancelAnimationFrame(this.animationHandle);
+  handleResize() {
+    this.restart();
+  }
+
+  toggleMenu() {
+    if (this.state === 'running') {
+      this.state = 'menu';
+      this.ui.showMenu(true);
+    } else if (this.state === 'menu' && this.player?.health > 0) {
+      this.state = 'running';
+      this.ui.showMenu(false);
     }
   }
 
-  update(deltaSeconds) {
-    this.player.update(deltaSeconds);
-    if (this.gameOver) {
-      this.draw();
-      this.updateUi();
-      return;
+  resume() {
+    if (this.state !== 'menu') return;
+    if (this.player?.health <= 0) return;
+    this.state = 'running';
+    this.ui.showMenu(false);
+  }
+
+  skipUpgradeSelection() {
+    if (this.state === 'choosing-upgrade') {
+      this.state = 'running';
+      this.ui.showLevelOverlay(false);
+      this.ui.clearUpgradeChoices();
+      this.ui.setSkillPoints(this.pendingSkillPoints);
+      this.log.push('You pocket the spark for a future moment.');
+    }
+  }
+
+  #loop(time) {
+    const dt = Math.min(0.06, (time - this.lastTime) / 1000 || 0);
+    this.lastTime = time;
+
+    if (this.state === 'running') {
+      this.#update(dt);
     }
 
-    this.enemyStepTimer += deltaSeconds;
-    if (this.enemyStepTimer >= ENEMY_STEP_INTERVAL) {
-      this.enemyStepTimer -= ENEMY_STEP_INTERVAL;
-      this.advanceEnemies(ENEMY_STEP_INTERVAL);
+    this.#render();
+    requestAnimationFrame((next) => this.#loop(next));
+  }
+
+  #update(dt) {
+    this.stats.timeAlive += dt;
+    const movement = this.input.getMovementVector();
+    const aim = this.input.getAimVector(this.player.aim);
+    this.player.aim = aim;
+
+    const speed = this.player.speed;
+    const targetVx = movement.x * speed;
+    const targetVy = movement.y * speed;
+
+    this.player.vx = lerp(this.player.vx, targetVx, this.player.spiritWalk ? 0.2 : 0.12);
+    this.player.vy = lerp(this.player.vy, targetVy, this.player.spiritWalk ? 0.2 : 0.12);
+
+    const nextX = this.player.x + this.player.vx * dt;
+    const nextY = this.player.y + this.player.vy * dt;
+
+    if (this.world.isWalkable(nextX, this.player.y)) {
+      this.stats.distance += Math.abs(nextX - this.player.x);
+      this.player.x = nextX;
+    } else {
+      this.player.vx = 0;
     }
 
-    for (const enemy of this.enemies) {
-      enemy.tickCooldown(deltaSeconds);
-      if (enemy.readyToShoot() && this.canEnemySeePlayer(enemy)) {
-        this.fireEnemyProjectile(enemy);
-        enemy.resetCooldown();
+    if (this.world.isWalkable(this.player.x, nextY)) {
+      this.stats.distance += Math.abs(nextY - this.player.y);
+      this.player.y = nextY;
+    } else {
+      this.player.vy = 0;
+    }
+
+    this.player.shootTimer = Math.max(0, this.player.shootTimer - dt);
+    this.player.dashTimer = Math.max(0, this.player.dashTimer - dt);
+
+    if (this.player.shield) {
+      this.player.shield.timer = Math.min(
+        this.player.shield.cooldown,
+        this.player.shield.timer + dt
+      );
+      if (this.player.shield.timer >= this.player.shield.cooldown) {
+        this.player.shield.active = true;
       }
     }
 
-    this.updateBullets(deltaSeconds);
-    this.updateEnemyProjectiles(deltaSeconds);
+    this.#updateProjectiles(dt);
+    this.#updateEnemies(dt);
+    this.#updateEnemyProjectiles(dt);
+    this.#updatePickups(dt);
+    this.particles.update(dt);
+    this.#checkAchievements();
 
-    if (this.gameOver) {
-      this.draw();
-      this.updateUi();
-      return;
+    this.spawnTimer -= dt;
+    if (this.spawnTimer <= 0) {
+      this.#spawnEnemyWave();
+      this.spawnTimer = ENEMY_SPAWN_INTERVAL + randRange(-2, 2);
     }
-
-    if (this.dashCooldown > 0) {
-      this.dashCooldown = Math.max(0, this.dashCooldown - deltaSeconds);
-    }
-
-    if (this.shootCooldown > 0) {
-      this.shootCooldown = Math.max(0, this.shootCooldown - deltaSeconds);
-    }
-
-    this.draw();
-    this.updateUi();
   }
 
-  updateBullets(deltaSeconds) {
-    const bulletSpeed = PLAYER_BULLET_SPEED + this.player.bulletSpeedBonus;
-    this.bullets = this.bullets
-      .map((bullet) => ({
-        ...bullet,
-        lifetime: bullet.lifetime - deltaSeconds,
-        x: bullet.x + bullet.dx * bulletSpeed * deltaSeconds,
-        y: bullet.y + bullet.dy * bulletSpeed * deltaSeconds,
-      }))
-      .filter((bullet) => bullet.lifetime > 0);
+  #handleShoot() {
+    if (this.state !== 'running') return;
+    if (this.player.shootTimer > 0) return;
+    const direction = this.player.aim;
+    if (vectorLength(direction) === 0) return;
 
-    const survivors = [];
-    for (const bullet of this.bullets) {
-      const tileX = Math.floor(bullet.x);
-      const tileY = Math.floor(bullet.y);
-      if (!this.isWalkable(tileX, tileY)) {
+    this.player.shootTimer = this.player.shootInterval;
+    const baseProjectile = createProjectile({
+      x: this.player.x,
+      y: this.player.y,
+      direction,
+      speed: this.player.projectileSpeed,
+      damage: this.player.damage,
+      lifetime: this.player.projectileLifetime,
+      friendly: true,
+      slowField: this.player.glowShots,
+    });
+
+    this.projectiles.push(baseProjectile);
+
+    if (this.player.doubleShot) {
+      const spreadAngle = randRange(-0.25, 0.25);
+      this.projectiles.push(
+        createProjectile({
+          x: this.player.x,
+          y: this.player.y,
+          direction,
+          speed: this.player.projectileSpeed * 0.92,
+          damage: Math.round(this.player.damage * 0.8),
+          lifetime: this.player.projectileLifetime,
+          friendly: true,
+          spread: spreadAngle,
+          slowField: this.player.glowShots,
+        })
+      );
+    }
+
+    this.particles.spawn({ x: this.player.x, y: this.player.y }, {
+      color: BULLET_COLOR,
+      radius: 0.2,
+      life: 0.4,
+      vx: -direction.x * 0.5,
+      vy: -direction.y * 0.5,
+    });
+    this.log.push('You release a burst of luminous light.');
+  }
+
+  #handleDash() {
+    if (this.state !== 'running') return;
+    if (this.player.dashTimer > 0) return;
+    const direction = this.input.getMovementVector();
+    if (vectorLength(direction) === 0) return;
+
+    this.player.dashTimer = this.player.dashCooldown;
+    const dashDistance = this.player.dashDistance;
+    const steps = Math.ceil(dashDistance);
+    let dx = direction.x;
+    let dy = direction.y;
+    if (!this.player.spiritWalk) {
+      const norm = normalize(direction);
+      dx = norm.x;
+      dy = norm.y;
+    }
+    for (let i = 0; i < steps; i += 1) {
+      const nextX = this.player.x + dx;
+      const nextY = this.player.y + dy;
+      if (!this.world.isWalkable(nextX, nextY)) break;
+      this.player.x = nextX;
+      this.player.y = nextY;
+      if (this.player.dashTrail) {
+        this.particles.spawn({ x: nextX, y: nextY }, {
+          color: 'rgba(251, 191, 36, 0.8)',
+          radius: 0.25,
+          life: 0.5,
+          vx: randRange(-0.3, 0.3),
+          vy: randRange(-0.3, 0.3),
+        });
+      }
+    }
+    this.log.push('You dash in a streak of warm light.');
+  }
+
+  resume() {
+    if (this.player?.health <= 0) return;
+    this.state = 'running';
+    this.ui.showMenu(false);
+  }
+
+  #updateProjectiles(dt) {
+    const newProjectiles = [];
+    for (const projectile of this.projectiles) {
+      projectile.x += projectile.vx * dt;
+      projectile.y += projectile.vy * dt;
+      projectile.age += dt;
+
+      if (!this.world.isWalkable(projectile.x, projectile.y)) {
+        if (projectile.slowField) {
+          this.#spawnSlowField(projectile.x, projectile.y);
+        }
         continue;
       }
 
       let hitEnemy = false;
-      for (let i = 0; i < this.enemies.length; i += 1) {
-        const enemy = this.enemies[i];
-        if (enemy.position.x === tileX && enemy.position.y === tileY) {
-          const alive = enemy.takeDamage(bullet.damage);
-          this.stats.shotsHit += 1;
-          if (this.enemySlowDuration) {
-            enemy.slowTimer = Math.max(enemy.slowTimer, this.enemySlowDuration);
-          }
+      for (const enemy of this.enemies) {
+        const distance = Math.hypot(enemy.x - projectile.x, enemy.y - projectile.y);
+        if (distance < 0.6) {
+          enemy.health -= projectile.damage;
           hitEnemy = true;
-          if (!alive) {
-            this.enemies.splice(i, 1);
-            this.handleEnemyDefeated(enemy);
+          this.particles.spawn({ x: enemy.x, y: enemy.y }, {
+            color: '#fbbf24',
+            radius: 0.18,
+            life: 0.5,
+            vx: randRange(-0.6, 0.6),
+            vy: randRange(-0.6, 0.6),
+          });
+          if (projectile.slowField) {
+            this.#spawnSlowField(enemy.x, enemy.y);
           }
           break;
         }
       }
 
-      if (!hitEnemy) {
-        survivors.push(bullet);
+      if (!hitEnemy && projectile.age < projectile.lifetime) {
+        newProjectiles.push(projectile);
       }
     }
-    this.bullets = survivors;
+    this.projectiles = newProjectiles;
+
+    this.enemies = this.enemies.filter((enemy) => {
+      if (enemy.health > 0) return true;
+      this.#onEnemyDefeated(enemy);
+      return false;
+    });
   }
 
-  updateEnemyProjectiles(deltaSeconds) {
-    this.enemyProjectiles = this.enemyProjectiles
-      .map((projectile) => ({
-        ...projectile,
-        lifetime: projectile.lifetime - deltaSeconds,
-        x: projectile.x + projectile.dx * ENEMY_PROJECTILE_SPEED * deltaSeconds,
-        y: projectile.y + projectile.dy * ENEMY_PROJECTILE_SPEED * deltaSeconds,
-      }))
-      .filter((projectile) => projectile.lifetime > 0);
+  #spawnSlowField(x, y) {
+    const field = {
+      x,
+      y,
+      radius: 1.8,
+      duration: 3,
+      age: 0,
+    };
+    if (!this.slowFields) this.slowFields = [];
+    this.slowFields.push(field);
+  }
 
+  #updateEnemyProjectiles(dt) {
     const survivors = [];
     for (const projectile of this.enemyProjectiles) {
-      const tileX = Math.floor(projectile.x);
-      const tileY = Math.floor(projectile.y);
-      if (!this.isWalkable(tileX, tileY)) {
-        continue;
-      }
+      projectile.x += projectile.vx * dt;
+      projectile.y += projectile.vy * dt;
+      projectile.age += dt;
 
-      const distanceToPlayer = Math.hypot(
-        projectile.x - (this.player.position.x + 0.5),
-        projectile.y - (this.player.position.y + 0.5)
+      const distance = Math.hypot(
+        projectile.x - this.player.x,
+        projectile.y - this.player.y
       );
-
-      if (distanceToPlayer <= 0.45) {
-        this.damagePlayer(ENEMY_PROJECTILE_DAMAGE, {
-          message: 'An arcane bolt crashes into you!',
-          lethalMessage: 'Arcane energy overwhelms you. Darkness follows.',
-        });
-        if (this.gameOver) {
-          break;
-        }
+      if (distance < 0.6) {
+        this.#damagePlayer(ENEMY_PROJECTILE_DAMAGE);
         continue;
       }
 
-      survivors.push(projectile);
-    }
+      if (!this.world.isWalkable(projectile.x, projectile.y)) {
+        continue;
+      }
 
+      if (projectile.age < projectile.lifetime) {
+        survivors.push(projectile);
+      }
+    }
     this.enemyProjectiles = survivors;
   }
 
-  damagePlayer(amount, { message, lethalMessage } = {}) {
-    const effectiveDamage = Math.max(
-      1,
-      Math.round(amount * (1 - this.damageReduction))
-    );
-    const healthBefore = this.player.health;
-    const alive = this.player.takeDamage(effectiveDamage);
-    const tookDamage = this.player.health < healthBefore;
+  #updateEnemies(dt) {
+    for (const enemy of this.enemies) {
+      enemy.fireTimer -= dt;
+      const dx = this.player.x - enemy.x;
+      const dy = this.player.y - enemy.y;
+      const distance = Math.hypot(dx, dy);
+      const slowed = this.#isInSlowField(enemy.x, enemy.y);
+      const speedMultiplier = slowed ? 0.5 : 1;
 
-    if (tookDamage) {
-      this.stats.hitsTaken += 1;
-      if (message) {
-        this.log.message(message);
+      if (distance > 0.1) {
+        const dir = normalize({ x: dx, y: dy });
+        const speed = ENEMY_BASE_SPEED * speedMultiplier;
+        const nextX = enemy.x + dir.x * speed * dt;
+        const nextY = enemy.y + dir.y * speed * dt;
+        if (this.world.isWalkable(nextX, enemy.y)) {
+          enemy.x = nextX;
+        }
+        if (this.world.isWalkable(enemy.x, nextY)) {
+          enemy.y = nextY;
+        }
       }
-      this.checkAchievements();
+
+      if (distance < 1.2) {
+        this.#damagePlayer(ENEMY_CONTACT_DAMAGE * dt);
+      }
+
+      if (distance < ENEMY_RANGE && enemy.fireTimer <= 0) {
+        enemy.fireTimer = ENEMY_FIRE_INTERVAL + randRange(-0.6, 0.6);
+        const projectile = createProjectile({
+          x: enemy.x,
+          y: enemy.y,
+          direction: normalize({ x: dx, y: dy }),
+          speed: ENEMY_PROJECTILE_SPEED,
+          damage: ENEMY_PROJECTILE_DAMAGE,
+          lifetime: ENEMY_PROJECTILE_LIFETIME,
+          friendly: false,
+        });
+        this.enemyProjectiles.push(projectile);
+        this.particles.spawn({ x: enemy.x, y: enemy.y }, {
+          color: ENEMY_BULLET_COLOR,
+          radius: 0.18,
+          life: 0.45,
+        });
+      }
     }
 
-    if (!alive && !this.gameOver) {
-      this.log.message(
-        lethalMessage || 'A cold chill overwhelms you. You fall.'
+    if (this.slowFields) {
+      this.slowFields = this.slowFields
+        .map((field) => ({ ...field, age: field.age + dt }))
+        .filter((field) => field.age < field.duration);
+    }
+  }
+
+  #updatePickups(dt) {
+    const survivors = [];
+    for (const pickup of this.pickups) {
+      const dx = this.player.x - pickup.x;
+      const dy = this.player.y - pickup.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 0.5) {
+        this.player.experience += pickup.value;
+        this.log.push('You collect a glowing memory shard.');
+        this.ui.showToast(`+${pickup.value} experience`);
+        this.#checkLevelUp();
+        continue;
+      }
+
+      if (distance < PICKUP_ATTRACTION_RANGE) {
+        const dir = normalize({ x: dx, y: dy });
+        pickup.vx = lerp(pickup.vx, dir.x * PICKUP_ATTRACTION_SPEED, 0.2);
+        pickup.vy = lerp(pickup.vy, dir.y * PICKUP_ATTRACTION_SPEED, 0.2);
+      }
+
+      pickup.x += pickup.vx * dt;
+      pickup.y += pickup.vy * dt;
+      pickup.life -= dt;
+
+      if (pickup.life > 0) {
+        survivors.push(pickup);
+      }
+    }
+    this.pickups = survivors;
+  }
+
+  #checkLevelUp() {
+    while (this.player.experience >= this.player.experienceToLevel) {
+      this.player.experience -= this.player.experienceToLevel;
+      this.player.level += 1;
+      this.player.experienceToLevel = Math.round(
+        this.player.experienceToLevel + LEVEL_XP_GROWTH
       );
-      this.gameOver = true;
-    }
-
-    this.updateUi();
-    return tookDamage;
-  }
-
-  handleEnemyDefeated(enemy) {
-    this.stats.enemiesDefeated += 1;
-    const xpReward = 30 + enemy.tier * 12;
-    const leveledUp = this.player.grantXp(xpReward);
-    this.log.message(`You defeated an enemy (+${xpReward} XP).`);
-    if (leveledUp) {
-      this.log.message(`You reached level ${this.player.level}!`);
-      this.log.message('A fresh skill point is ready to spend.');
-    }
-
-    this.checkAchievements();
-    this.updateSkillTree();
-    this.updateUi();
-
-    if (this.enemies.length === 0) {
-      this.stats.wavesCleared += 1;
-      this.wave += 1;
-      const spawnCount = this.baseEnemyCount + this.wave * 2;
-      this.enemyProjectiles = [];
-      this.enemies = this.spawnEnemies(spawnCount, this.wave);
-      this.enemyStepTimer = 0;
-      this.log.message(`Wave ${this.wave} surges into the halls!`);
-      this.checkAchievements();
-    }
-  }
-
-  handleMove({ x, y }) {
-    if (this.gameOver) return;
-
-    const nextX = this.player.position.x + x;
-    const nextY = this.player.position.y + y;
-
-    if (!this.isWalkable(nextX, nextY)) {
-      this.log.message('You bump into a cold stone wall.');
-      return;
-    }
-
-    this.player.move(x, y);
-    if (x !== 0 || y !== 0) {
-      this.player.lastDirection = { x, y };
-    }
-    this.log.message(
-      `You move to (${this.player.position.x}, ${this.player.position.y}).`
-    );
-    this.draw();
-    this.updateUi();
-  }
-
-  handleAction(action) {
-    if (this.gameOver) return;
-    if (action.type === 'shoot') {
-      this.shoot();
-    } else if (action.type === 'dash') {
-      this.dash();
-    }
-  }
-
-  shoot() {
-    if (this.shootCooldown > 0) {
-      return;
-    }
-    const { x, y } = this.player.lastDirection;
-    if (x === 0 && y === 0) {
-      return;
-    }
-    this.shootCooldown = SHOOT_COOLDOWN;
-    const bullet = {
-      x: this.player.position.x + 0.5,
-      y: this.player.position.y + 0.5,
-      dx: x,
-      dy: y,
-      lifetime: PLAYER_BULLET_LIFETIME,
-      damage: this.player.projectileDamage,
-    };
-    this.bullets.push(bullet);
-    this.stats.shotsFired += 1;
-    this.log.message('You fire a blazing shot.');
-  }
-
-  dash() {
-    if (this.dashCooldown > 0) {
-      return;
-    }
-    const { x, y } = this.player.lastDirection;
-    if (x === 0 && y === 0) {
-      return;
-    }
-    this.dashCooldown = this.dashCooldownDuration;
-
-    let stepsTaken = 0;
-    for (let step = 0; step < this.dashDistance; step += 1) {
-      const nextX = this.player.position.x + x;
-      const nextY = this.player.position.y + y;
-      if (!this.isWalkable(nextX, nextY)) {
-        break;
-      }
-      this.player.move(x, y);
-      stepsTaken += 1;
-    }
-
-    if (stepsTaken > 0) {
-      this.stats.dashesUsed += 1;
-      if (this.dashInvulnerabilityBonus > 0) {
-        this.player.invulnerabilityTimer = Math.max(
-          this.player.invulnerabilityTimer,
-          this.dashInvulnerabilityBonus
+      this.pendingSkillPoints += 1;
+      if (this.player.onLevelUpRegen) {
+        this.player.health = clamp(
+          this.player.health + this.player.onLevelUpRegen,
+          0,
+          this.player.maxHealth
         );
       }
-      this.checkAchievements();
-      this.log.message(`You dash ${stepsTaken} tile(s) ahead.`);
-    } else {
-      this.log.message('You lurch forward but cannot move.');
-    }
-    this.draw();
-    this.updateUi();
-  }
-
-  advanceEnemies(stepSeconds) {
-    for (const enemy of this.enemies) {
-      if (enemy.slowTimer > 0) {
-        enemy.slowTimer = Math.max(0, enemy.slowTimer - stepSeconds);
-        if (enemy.slowTimer > 0) {
-          continue;
-        }
-      }
-
-      const dx = Math.sign(this.player.position.x - enemy.position.x);
-      const dy = Math.sign(this.player.position.y - enemy.position.y);
-
-      let moved = false;
-      const horizontalDistance = Math.abs(
-        this.player.position.x - enemy.position.x
-      );
-      const verticalDistance = Math.abs(
-        this.player.position.y - enemy.position.y
-      );
-
-      if (horizontalDistance > verticalDistance) {
-        moved = this.tryMoveEnemy(enemy, dx, 0);
-        if (!moved) {
-          moved = this.tryMoveEnemy(enemy, 0, dy);
-        }
-      } else {
-        moved = this.tryMoveEnemy(enemy, 0, dy);
-        if (!moved) {
-          moved = this.tryMoveEnemy(enemy, dx, 0);
-        }
-      }
-
-      if (!moved) {
-        const fallback = CARDINAL_DIRECTIONS[
-          Math.floor(Math.random() * CARDINAL_DIRECTIONS.length)
-        ];
-        this.tryMoveEnemy(enemy, fallback.x, fallback.y);
-      }
-
-      if (
-        enemy.position.x === this.player.position.x &&
-        enemy.position.y === this.player.position.y
-      ) {
-        this.damagePlayer(ENEMY_CONTACT_DAMAGE, {
-          message: 'An enemy slams into you!',
-          lethalMessage:
-            'The assault overwhelms you. The dungeon claims another adventurer.',
-        });
-        if (this.gameOver) {
-          break;
-        }
-      }
-    }
-  }
-
-  tryMoveEnemy(enemy, dx, dy) {
-    const nextX = enemy.position.x + dx;
-    const nextY = enemy.position.y + dy;
-    if (!this.isWalkable(nextX, nextY)) {
-      return false;
-    }
-    enemy.move(dx, dy);
-    return true;
-  }
-
-  updateUi() {
-    if (this.ui.healthFill) {
-      const ratio = Math.max(0, Math.min(1, this.player.healthRatio()));
-      this.ui.healthFill.style.width = `${ratio * 100}%`;
-      this.ui.healthFill.parentElement?.setAttribute(
-        'aria-valuenow',
-        String(Math.round(ratio * 100))
-      );
+      this.ui.showToast(`Level ${this.player.level}! Skill spark earned.`);
+      this.log.push('A new spark flares within you.');
+      this.#presentUpgrades();
     }
 
-    if (this.ui.healthValue) {
-      this.ui.healthValue.textContent = `${Math.round(
-        this.player.health
-      )} / ${this.player.maxHealth}`;
-    }
-
-    if (this.ui.progressFill) {
-      const progress = Math.max(0, Math.min(1, this.player.progressRatio()));
-      this.ui.progressFill.style.width = `${progress * 100}%`;
-      this.ui.progressFill.parentElement?.setAttribute(
-        'aria-valuenow',
-        String(Math.round(progress * 100))
-      );
-    }
-
-    if (this.ui.progressValue) {
-      this.ui.progressValue.textContent = `Level ${this.player.level} • ${Math.floor(
-        this.player.xp
-      )} / ${this.player.nextLevelXp} XP`;
-    }
-
-    if (this.ui.skillPointsValue) {
-      this.ui.skillPointsValue.textContent = String(this.player.skillPoints);
-    }
-  }
-
-  initializeSkillTree() {
-    if (!this.ui.skillList) {
-      return;
-    }
-    this.ui.skillList.innerHTML = '';
-    this.skills.forEach((skill) => {
-      const item = document.createElement('li');
-      item.dataset.skillKey = skill.key;
-      const name = document.createElement('span');
-      name.className = 'skill-name';
-      name.textContent = skill.name;
-      const meta = document.createElement('span');
-      meta.className = 'skill-meta';
-      meta.textContent = `Tier ${skill.tier} • Cost ${skill.cost}`;
-      const description = document.createElement('span');
-      description.className = 'skill-description';
-      description.textContent = skill.description;
-      const status = document.createElement('span');
-      status.className = 'skill-status';
-      status.textContent = 'Locked';
-      item.append(name, meta, description, status);
-      item.addEventListener('click', () => this.attemptUnlockSkill(skill));
-      this.ui.skillList.appendChild(item);
-      skill.element = item;
-      skill.statusElement = status;
-      skill.metaElement = meta;
-    });
-    this.updateSkillTree();
-  }
-
-  updateSkillTree() {
-    this.skills.forEach((skill) => {
-      if (!skill.element || !skill.statusElement) return;
-      const available = this.canUnlockSkill(skill);
-      skill.element.classList.toggle('unlocked', skill.unlocked);
-      skill.element.classList.toggle('available', available);
-      if (skill.unlocked) {
-        skill.statusElement.textContent = 'Unlocked';
-      } else if (available) {
-        skill.statusElement.textContent = `Ready • Cost ${skill.cost}`;
-      } else {
-        skill.statusElement.textContent = this.describeSkillRequirements(skill);
-      }
-    });
-  }
-
-  attemptUnlockSkill(skill) {
-    if (skill.unlocked) {
-      return;
-    }
-
-    if (!this.canUnlockSkill(skill)) {
-      const reason = this.describeSkillRequirements(skill);
-      this.log.message(`Cannot unlock ${skill.name}: ${reason}.`);
-      return;
-    }
-
-    this.player.skillPoints = Math.max(0, this.player.skillPoints - skill.cost);
-    skill.unlocked = true;
-    skill.apply();
-    this.log.message(`Skill unlocked: ${skill.name}.`);
-    this.updateSkillTree();
-    this.updateUi();
-  }
-
-  canUnlockSkill(skill) {
-    if (skill.unlocked) {
-      return false;
-    }
-    if (this.player.skillPoints < skill.cost) {
-      return false;
-    }
-    if (!skill.prerequisites || skill.prerequisites.length === 0) {
-      return true;
-    }
-    return skill.prerequisites.every((key) => this.findSkill(key)?.unlocked);
-  }
-
-  describeSkillRequirements(skill) {
-    if (skill.unlocked) {
-      return 'Unlocked';
-    }
-    const requirements = [];
-    if (this.player.skillPoints < skill.cost) {
-      requirements.push(`Need ${skill.cost} SP`);
-    }
-    const lockedPrereqs = (skill.prerequisites || [])
-      .map((key) => this.findSkill(key))
-      .filter((prereq) => prereq && !prereq.unlocked);
-    if (lockedPrereqs.length > 0) {
-      requirements.push(
-        `Requires ${lockedPrereqs.map((prereq) => prereq.name).join(', ')}`
-      );
-    }
-    return requirements.join(' • ') || `Tier ${skill.tier}`;
-  }
-
-  findSkill(key) {
-    return this.skills.find((skill) => skill.key === key);
-  }
-
-  initializeAchievements() {
-    if (!this.ui.achievementList) {
-      return;
-    }
-    this.ui.achievementList.innerHTML = '';
-    this.achievements.forEach((achievement) => {
-      const item = document.createElement('li');
-      const title = document.createElement('span');
-      title.className = 'achievement-title';
-      title.textContent = achievement.name;
-      const details = document.createElement('span');
-      details.className = 'achievement-details';
-      details.textContent = achievement.description;
-      const progress = document.createElement('span');
-      progress.className = 'achievement-progress';
-      progress.textContent = `0 / ${achievement.target}`;
-      item.append(title, details, progress);
-      this.ui.achievementList.appendChild(item);
-      achievement.element = item;
-      achievement.progressElement = progress;
-    });
-    this.updateAchievements();
-  }
-
-  updateAchievements() {
-    this.achievements.forEach((achievement) => {
-      if (!achievement.element || !achievement.progressElement) {
-        return;
-      }
-      const current = achievement.progress(this.stats, this);
-      const completed = achievement.unlocked || current >= achievement.target;
-      achievement.element.classList.toggle('completed', completed);
-      if (completed) {
-        achievement.progressElement.textContent = 'Completed';
-      } else {
-        achievement.progressElement.textContent = `${Math.min(
-          achievement.target,
-          Math.floor(current)
-        )} / ${achievement.target}`;
-      }
-    });
-  }
-
-  checkAchievements() {
-    let unlockedAny = false;
-    this.achievements.forEach((achievement) => {
-      if (achievement.unlocked) {
-        return;
-      }
-      if (achievement.progress(this.stats, this) >= achievement.target) {
-        achievement.unlocked = true;
-        unlockedAny = true;
-        this.log.message(`Achievement unlocked: ${achievement.name}!`);
-      }
-    });
-    if (unlockedAny || this.ui.achievementList) {
-      this.updateAchievements();
-    }
-  }
-
-  adjustDashCooldown(delta) {
-    this.dashCooldownDuration = Math.max(
-      0.5,
-      this.dashCooldownDuration + delta
+    this.ui.setSkillPoints(this.pendingSkillPoints);
+    this.ui.setExperience(
+      this.player.level,
+      this.player.experience,
+      this.player.experienceToLevel
     );
-    this.dashCooldown = Math.min(this.dashCooldown, this.dashCooldownDuration);
+    this.ui.setHealth(this.player.health, this.player.maxHealth);
   }
 
-  spawnEnemies(count, wave = 1) {
-    const enemies = [];
-    const attemptsLimit = count * 30;
-    const tierBase = Math.max(1, Math.floor((wave + 1) / 2));
-    for (let attempts = 0; enemies.length < count && attempts < attemptsLimit; attempts += 1) {
-      const spawn = this.findSpawn();
-      if (spawn.x === this.player.position.x && spawn.y === this.player.position.y) {
-        continue;
+  #presentUpgrades() {
+    this.state = 'choosing-upgrade';
+    this.ui.showLevelOverlay(true);
+    const options = [];
+    const pool = this.upgradePool.length > 0 ? this.upgradePool : [...UPGRADE_LIBRARY];
+    const attempts = Math.min(3, pool.length);
+    while (options.length < attempts) {
+      const candidate = pick(pool);
+      if (!options.includes(candidate)) {
+        options.push(candidate);
       }
-      if (
-        enemies.some(
-          (enemy) =>
-            enemy.position.x === spawn.x && enemy.position.y === spawn.y
-        )
-      ) {
-        continue;
-      }
-      const distance =
-        Math.abs(spawn.x - this.player.position.x) +
-        Math.abs(spawn.y - this.player.position.y);
-      if (distance < 6) {
-        continue;
-      }
-      const tierBonus = Math.random() < Math.min(0.45, wave * 0.08) ? 1 : 0;
-      enemies.push(
-        new Enemy({
-          position: spawn,
-          tier: tierBase + tierBonus,
-        })
-      );
     }
-    return enemies;
+    this.upgradeChoices = options;
+    this.ui.renderUpgradeChoices(options, (choice) => this.#applyUpgrade(choice));
   }
 
-  fireEnemyProjectile(enemy) {
-    const originX = enemy.position.x + 0.5;
-    const originY = enemy.position.y + 0.5;
-    const targetX = this.player.position.x + 0.5;
-    const targetY = this.player.position.y + 0.5;
-    const dx = targetX - originX;
-    const dy = targetY - originY;
-    const distance = Math.hypot(dx, dy) || 1;
-    this.enemyProjectiles.push({
-      x: originX,
-      y: originY,
-      dx: dx / distance,
-      dy: dy / distance,
-      lifetime: ENEMY_PROJECTILE_LIFETIME,
+  #applyUpgrade(upgrade) {
+    this.pendingSkillPoints = Math.max(0, this.pendingSkillPoints - 1);
+    upgrade.apply(this.player);
+    this.player.upgrades.push(upgrade);
+    this.upgradePool = this.upgradePool.filter((item) => item.id !== upgrade.id);
+    this.stats.upgrades += 1;
+    this.ui.setUpgrades(this.player.upgrades);
+    this.ui.setSkillPoints(this.pendingSkillPoints);
+    this.ui.clearUpgradeChoices();
+    this.ui.showLevelOverlay(false);
+    this.state = 'running';
+    this.log.push(`You attune to ${upgrade.name}.`);
+  }
+
+  #onEnemyDefeated(enemy) {
+    this.stats.enemiesDefeated += 1;
+    this.log.push('A hostile shade dissolves into sparks.');
+    const xpValue = 12 + Math.round(Math.random() * 6);
+    this.pickups.push({
+      x: enemy.x,
+      y: enemy.y,
+      vx: randRange(-0.2, 0.2),
+      vy: randRange(-0.2, 0.2),
+      value: xpValue,
+      life: 12,
     });
-    if (Math.random() < 0.35) {
-      this.log.message('An enemy launches an arcane bolt!');
-    }
+    this.particles.spawn({ x: enemy.x, y: enemy.y }, {
+      color: '#fbbf24',
+      radius: 0.3,
+      life: 0.6,
+    });
   }
 
-  canEnemySeePlayer(enemy) {
-    const dx = this.player.position.x - enemy.position.x;
-    const dy = this.player.position.y - enemy.position.y;
-    const distance = Math.hypot(dx, dy);
-    if (distance > ENEMY_VIEW_DISTANCE) {
-      return false;
-    }
-    const steps = Math.max(Math.abs(dx), Math.abs(dy));
-    if (steps === 0) {
-      return false;
-    }
-    let currentX = enemy.position.x + 0.5;
-    let currentY = enemy.position.y + 0.5;
-    const stepX = dx / steps;
-    const stepY = dy / steps;
-    for (let i = 0; i < steps; i += 1) {
-      currentX += stepX;
-      currentY += stepY;
-      const tileX = Math.floor(currentX);
-      const tileY = Math.floor(currentY);
-      if (tileX === this.player.position.x && tileY === this.player.position.y) {
-        return true;
-      }
-      if (!this.isWalkable(tileX, tileY)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  isWalkable(x, y) {
-    if (x < 0 || y < 0 || x >= this.mapWidth || y >= this.mapHeight) {
-      return false;
-    }
-    return this.map[y][x] === TILE_FLOOR;
-  }
-
-  findSpawn() {
-    for (let attempts = 0; attempts < 200; attempts += 1) {
-      const x = Math.floor(Math.random() * this.mapWidth);
-      const y = Math.floor(Math.random() * this.mapHeight);
-      if (this.isWalkable(x, y)) {
-        return { x, y };
-      }
-    }
-    return { x: Math.floor(this.mapWidth / 2), y: Math.floor(this.mapHeight / 2) };
-  }
-
-  findSpawnNear(target) {
-    const visited = new Set();
-    const queue = [target];
-    while (queue.length > 0) {
-      const current = queue.shift();
-      const key = `${current.x},${current.y}`;
-      if (visited.has(key)) {
-        continue;
-      }
-      visited.add(key);
-      if (
-        current.x >= 0 &&
-        current.y >= 0 &&
-        current.x < this.mapWidth &&
-        current.y < this.mapHeight
-      ) {
-        if (this.isWalkable(current.x, current.y)) {
-          return { x: current.x, y: current.y };
-        }
-        for (const direction of CARDINAL_DIRECTIONS) {
-          queue.push({
-            x: current.x + direction.x,
-            y: current.y + direction.y,
-          });
-        }
-      }
-    }
-    return this.findSpawn();
-  }
-
-  handleResize() {
-    const newWidth = Math.floor(this.canvas.width / TILE_SIZE);
-    const newHeight = Math.floor(this.canvas.height / TILE_SIZE);
-    if (newWidth === this.mapWidth && newHeight === this.mapHeight) {
+  #damagePlayer(amount) {
+    if (amount <= 0) return;
+    if (this.player.shield?.active) {
+      this.player.shield.active = false;
+      this.player.shield.timer = 0;
+      this.log.push('Your aurora shell absorbs the impact.');
+      this.ui.showToast('Shield absorbed a hit');
       return;
     }
-    this.mapWidth = newWidth;
-    this.mapHeight = newHeight;
-    this.map = createDungeon(this.mapWidth, this.mapHeight);
-    const target = {
-      x: Math.floor(this.mapWidth / 2),
-      y: Math.floor(this.mapHeight / 2),
-    };
-    this.player.position = this.findSpawnNear(target);
-    this.enemies = this.spawnEnemies(this.baseEnemyCount + this.wave * 2, this.wave);
-    this.enemyProjectiles = [];
-    this.bullets = [];
-    this.enemyStepTimer = 0;
-    this.log.message('The dungeon shifts around you, revealing fresh halls.');
-    this.updateSkillTree();
-    this.updateAchievements();
-    this.updateUi();
-    this.draw();
+    this.player.health = clamp(this.player.health - amount, 0, this.player.maxHealth);
+    this.stats.damageTaken += amount;
+    this.ui.setHealth(this.player.health, this.player.maxHealth);
+    this.particles.spawn({ x: this.player.x, y: this.player.y }, {
+      color: '#f87171',
+      radius: 0.25,
+      life: 0.6,
+    });
+    if (this.player.health <= 0) {
+      this.log.push('You rest as the valley reknits itself. Press Restart to try again.');
+      this.state = 'menu';
+      this.ui.showMenu(true);
+    }
   }
 
-  draw() {
-    this.renderer.clear();
-    for (let y = 0; y < this.mapHeight; y += 1) {
-      for (let x = 0; x < this.mapWidth; x += 1) {
-        const tile = this.map[y][x];
-        const color = tile === TILE_WALL ? WALL_COLOR : FLOOR_COLOR;
-        this.renderer.drawTile(x, y, color);
+  #spawnEnemyWave() {
+    if (this.enemies.length > 12) return;
+    const spawnCount = 2 + randInt(0, 2);
+    for (let i = 0; i < spawnCount; i += 1) {
+      const source = this.world.enemySpawns.length
+        ? pick(this.world.enemySpawns)
+        : { x: this.world.spawnPoint.x + randRange(-4, 4), y: this.world.spawnPoint.y + randRange(6, 10) };
+      const enemy = {
+        x: source.x + randRange(-3, 3),
+        y: source.y + randRange(-3, 3),
+        health: ENEMY_BASE_HEALTH * randRange(0.8, 1.2),
+        color: pick(ENEMY_PALETTE),
+        fireTimer: randRange(0.5, ENEMY_FIRE_INTERVAL),
+      };
+      if (this.world.isWalkable(enemy.x, enemy.y)) {
+        this.enemies.push(enemy);
+      }
+    }
+    this.log.push('Shadows gather near the horizon...');
+  }
+
+  #checkAchievements() {
+    const unlocked = [];
+    for (const achievement of ACHIEVEMENT_LIBRARY) {
+      if (this.achievements.has(achievement.id)) continue;
+      if (achievement.check(this.stats)) {
+        this.achievements.add(achievement.id);
+        unlocked.push(achievement);
+        this.log.push(`Achievement unlocked: ${achievement.label}`);
+        this.ui.showToast(`Achievement: ${achievement.label}`);
+      }
+    }
+    if (unlocked.length > 0) {
+      const list = [...this.achievements]
+        .map((id) => ACHIEVEMENT_LIBRARY.find((item) => item.id === id))
+        .filter(Boolean);
+      this.ui.setAchievements(list);
+    }
+  }
+
+  #render() {
+    const ctx = this.context;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.#drawWorld(ctx);
+    this.#drawDecorations(ctx);
+    this.#drawSigns(ctx);
+    this.#drawPlayer(ctx);
+    this.#drawEnemies(ctx);
+    this.#drawProjectiles(ctx);
+    this.#drawPickups(ctx);
+    if (this.slowFields) {
+      for (const field of this.slowFields) {
+        this.#drawSlowField(ctx, field);
+      }
+    }
+    this.particles.draw(ctx);
+  }
+
+  #drawWorld(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+
+    for (let y = 0; y <= viewHeight; y += 1) {
+      for (let x = 0; x <= viewWidth; x += 1) {
+        const worldX = x + offsetX;
+        const worldY = y + offsetY;
+        const tile = this.world.getTile(worldX, worldY);
+        const info = TILE_TYPES[tile.type];
+        const color = info?.variants?.[tile.variant] ?? info?.color ?? '#000';
+        ctx.fillStyle = color;
+        ctx.fillRect(
+          x * TILE_SIZE,
+          y * TILE_SIZE,
+          TILE_SIZE + 1,
+          TILE_SIZE + 1
+        );
+      }
+    }
+  }
+
+  #drawDecorations(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+
+    for (const deco of this.world.decorations) {
+      const screenX = (deco.x - offsetX) * TILE_SIZE;
+      const screenY = (deco.y - offsetY) * TILE_SIZE;
+      if (screenX < -TILE_SIZE || screenY < -TILE_SIZE) continue;
+      if (screenX > this.canvas.width || screenY > this.canvas.height) continue;
+      if (deco.type === 'tree') {
+        ctx.fillStyle = SCENERY_COLORS.treeTrunk;
+        ctx.fillRect(screenX + TILE_SIZE * 0.45, screenY + TILE_SIZE * 0.5, TILE_SIZE * 0.1, TILE_SIZE * 0.5);
+        ctx.fillStyle = pick(SCENERY_COLORS.treeLeaves);
+        ctx.beginPath();
+        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE * 0.35, TILE_SIZE * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (deco.type === 'blossom') {
+        ctx.fillStyle = SCENERY_COLORS.blossom;
+        ctx.beginPath();
+        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE * 0.3, TILE_SIZE * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (deco.type === 'rock') {
+        ctx.fillStyle = '#94a3b8';
+        ctx.beginPath();
+        ctx.ellipse(
+          screenX + TILE_SIZE / 2,
+          screenY + TILE_SIZE * 0.7,
+          TILE_SIZE * 0.35,
+          TILE_SIZE * 0.25,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      } else if (deco.type === 'house') {
+        ctx.fillStyle = SCENERY_COLORS.houseWall;
+        ctx.fillRect(screenX + TILE_SIZE * 0.1, screenY + TILE_SIZE * 0.3, TILE_SIZE * 0.8, TILE_SIZE * 0.6);
+        ctx.fillStyle = SCENERY_COLORS.houseRoof;
+        ctx.beginPath();
+        ctx.moveTo(screenX + TILE_SIZE * 0.05, screenY + TILE_SIZE * 0.35);
+        ctx.lineTo(screenX + TILE_SIZE * 0.5, screenY + TILE_SIZE * 0.05);
+        ctx.lineTo(screenX + TILE_SIZE * 0.95, screenY + TILE_SIZE * 0.35);
+        ctx.closePath();
+        ctx.fill();
       }
     }
 
+    for (const lamp of this.world.lamps) {
+      const screenX = (lamp.x - offsetX) * TILE_SIZE;
+      const screenY = (lamp.y - offsetY) * TILE_SIZE;
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = SCENERY_COLORS.lampPost;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  #drawSigns(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = `${Math.floor(TILE_SIZE * 0.35)}px 'Trebuchet MS', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+
+    for (const sign of this.world.signs) {
+      const screenX = (sign.x - offsetX) * TILE_SIZE;
+      const screenY = (sign.y - offsetY) * TILE_SIZE;
+      if (screenX < -TILE_SIZE || screenY < -TILE_SIZE) continue;
+      if (screenX > this.canvas.width + TILE_SIZE || screenY > this.canvas.height + TILE_SIZE) continue;
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(
+        screenX - TILE_SIZE * 0.3,
+        screenY - TILE_SIZE * 0.9,
+        TILE_SIZE * 0.6,
+        TILE_SIZE * 0.4
+      );
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(
+        screenX - TILE_SIZE * 0.04,
+        screenY - TILE_SIZE * 0.5,
+        TILE_SIZE * 0.08,
+        TILE_SIZE * 0.5
+      );
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText(sign.text, screenX, screenY - TILE_SIZE * 0.95);
+    }
+  }
+
+  #drawPlayer(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+    const screenX = (this.player.x - offsetX) * TILE_SIZE;
+    const screenY = (this.player.y - offsetY) * TILE_SIZE;
+
+    ctx.fillStyle = '#fde68a';
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, TILE_SIZE * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, TILE_SIZE * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const aimX = screenX + this.player.aim.x * TILE_SIZE * 0.5;
+    const aimY = screenY + this.player.aim.y * TILE_SIZE * 0.5;
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(screenX, screenY);
+    ctx.lineTo(aimX, aimY);
+    ctx.stroke();
+
+    if (this.player.shield?.active) {
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  #drawEnemies(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+
+    ctx.lineWidth = 2;
     for (const enemy of this.enemies) {
-      this.renderer.drawEnemy(enemy);
+      const screenX = (enemy.x - offsetX) * TILE_SIZE;
+      const screenY = (enemy.y - offsetY) * TILE_SIZE;
+      ctx.fillStyle = enemy.color;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.35)';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.36, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const ratio = clamp(enemy.health / ENEMY_BASE_HEALTH, 0, 1);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+      ctx.fillRect(
+        screenX - TILE_SIZE * 0.3,
+        screenY - TILE_SIZE * 0.5,
+        TILE_SIZE * 0.6,
+        TILE_SIZE * 0.12
+      );
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(
+        screenX - TILE_SIZE * 0.3,
+        screenY - TILE_SIZE * 0.5,
+        TILE_SIZE * 0.6 * ratio,
+        TILE_SIZE * 0.12
+      );
+    }
+  }
+
+  #drawProjectiles(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+
+    for (const projectile of this.projectiles) {
+      const screenX = (projectile.x - offsetX) * TILE_SIZE;
+      const screenY = (projectile.y - offsetY) * TILE_SIZE;
+      ctx.fillStyle = BULLET_COLOR;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.15, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     for (const projectile of this.enemyProjectiles) {
-      this.renderer.drawEnemyProjectile(projectile);
+      const screenX = (projectile.x - offsetX) * TILE_SIZE;
+      const screenY = (projectile.y - offsetY) * TILE_SIZE;
+      ctx.fillStyle = ENEMY_BULLET_COLOR;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.12, 0, Math.PI * 2);
+      ctx.fill();
     }
+  }
 
-    for (const bullet of this.bullets) {
-      this.renderer.drawBullet(bullet);
+  #drawPickups(ctx) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+
+    for (const pickup of this.pickups) {
+      const screenX = (pickup.x - offsetX) * TILE_SIZE;
+      const screenY = (pickup.y - offsetY) * TILE_SIZE;
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.8)';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, TILE_SIZE * 0.18, 0, Math.PI * 2);
+      ctx.fill();
     }
+  }
 
-    this.renderer.drawPlayer(this.player);
+  #drawSlowField(ctx, field) {
+    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
+    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
+    const offsetX = Math.floor(this.player.x - viewWidth / 2);
+    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+    const screenX = (field.x - offsetX) * TILE_SIZE;
+    const screenY = (field.y - offsetY) * TILE_SIZE;
+    const alpha = clamp(1 - field.age / field.duration, 0, 1) * 0.4;
+    ctx.fillStyle = `rgba(96, 165, 250, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, field.radius * TILE_SIZE, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  #isInSlowField(x, y) {
+    if (!this.slowFields) return false;
+    return this.slowFields.some((field) => Math.hypot(field.x - x, field.y - y) < field.radius);
   }
 }

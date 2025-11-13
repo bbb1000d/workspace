@@ -1,9 +1,9 @@
 import { RoguelikeGame, TILE_SIZE } from './roguelike.js';
 
-const MIN_WIDTH_TILES = 24;
-const MIN_HEIGHT_TILES = 18;
+const MIN_WIDTH_TILES = 30;
+const MIN_HEIGHT_TILES = 22;
 
-function resizeCanvasToViewport(canvas) {
+function resizeCanvas(canvas) {
   const widthTiles = Math.max(
     MIN_WIDTH_TILES,
     Math.ceil(window.innerWidth / TILE_SIZE)
@@ -24,33 +24,43 @@ function resizeCanvasToViewport(canvas) {
 
 document.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('game');
-  const log = document.getElementById('log');
   const ui = {
     healthFill: document.querySelector('[data-health-fill]'),
     healthValue: document.getElementById('health-value'),
     progressFill: document.querySelector('[data-progress-fill]'),
     progressValue: document.getElementById('xp-value'),
-    skillList: document.getElementById('skills'),
     skillPointsValue: document.getElementById('skill-points'),
+    goalValue: document.getElementById('current-goal'),
+    skillList: document.getElementById('skills'),
     achievementList: document.getElementById('achievements'),
+    log: document.getElementById('log'),
+    mapInfo: document.getElementById('map-info'),
+    pauseMenu: document.getElementById('pause-menu'),
+    resumeButton: document.getElementById('resume-button'),
+    restartButton: document.getElementById('restart-button'),
+    levelOverlay: document.getElementById('levelup-overlay'),
+    upgradeOptions: document.getElementById('upgrade-options'),
+    skipUpgrade: document.getElementById('skip-upgrade'),
+    toast: document.getElementById('toast'),
   };
 
-  if (!canvas || !log) {
-    throw new Error('Game canvas or log element missing from document.');
+  for (const [key, element] of Object.entries(ui)) {
+    if (!element) {
+      throw new Error(`Missing UI element: ${key}`);
+    }
   }
 
-  if (!ui.healthFill || !ui.progressFill || !ui.skillList) {
-    throw new Error('Game UI elements missing from document.');
-  }
+  resizeCanvas(canvas);
 
-  resizeCanvasToViewport(canvas);
-
-  const game = new RoguelikeGame({ canvas, log, ui });
+  const game = new RoguelikeGame({ canvas, ui });
   game.start();
 
   window.addEventListener('resize', () => {
-    if (resizeCanvasToViewport(canvas)) {
+    if (resizeCanvas(canvas)) {
       game.handleResize();
     }
   });
+
+  ui.resumeButton.addEventListener('click', () => game.resume());
+  ui.restartButton.addEventListener('click', () => game.restart());
 });
