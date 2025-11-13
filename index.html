@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browser Roguelike Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="game-panel">
+        <canvas id="game" width="512" height="512" aria-label="Top-down roguelike prototype"></canvas>
+      </section>
+      <section class="info-panel">
+        <h1>Roguelike Prototype</h1>
+        <p>Use the arrow keys or WASD to explore the dungeon.</p>
+        <ul id="log" class="log" aria-live="polite"></ul>
+      </section>
+    </main>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

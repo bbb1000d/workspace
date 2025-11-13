@@ -1,0 +1,65 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Fira Sans", "Segoe UI", sans-serif;
+  background-color: #0f0f1d;
+  color: #f1f5f9;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.layout {
+  display: grid;
+  gap: 1.5rem;
+  padding: 2rem;
+  grid-template-columns: auto 240px;
+  background: rgba(20, 24, 40, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.45);
+}
+
+.game-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+canvas {
+  width: 512px;
+  height: 512px;
+  image-rendering: pixelated;
+  background: #020617;
+  border-radius: 12px;
+  border: 2px solid rgba(59, 130, 246, 0.5);
+}
+
+.info-panel {
+  max-width: 240px;
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 1.5rem;
+}
+
+.log {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.log li {
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  padding: 0.5rem;
+  border-radius: 8px;
+}
