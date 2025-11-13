@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browser Roguelike Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="game-panel">
+        <canvas
+          id="game"
+          width="512"
+          height="512"
+          aria-label="Top-down roguelike prototype"
+        ></canvas>
+      </section>
+      <section class="info-panel">
+        <h1>Roguelike Prototype</h1>
+        <p>
+          Use the arrow keys or WASD to move. Press Space to shoot and E to dash
+          in the last direction you moved.
+        </p>
+        <section class="meters">
+          <div class="meter">
+            <div class="meter-header">
+              <span>Health</span>
+              <span id="health-value">100 / 100</span>
+            </div>
+            <div
+              class="meter-track"
+              role="progressbar"
+              aria-label="Player health"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="100"
+            >
+              <div class="meter-fill meter-fill--health" data-health-fill></div>
+            </div>
+          </div>
+          <div class="meter">
+            <div class="meter-header">
+              <span>Progress</span>
+              <span id="xp-value">Level 1</span>
+            </div>
+            <div
+              class="meter-track"
+              role="progressbar"
+              aria-label="Experience toward next level"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <div class="meter-fill meter-fill--xp" data-progress-fill></div>
+            </div>
+          </div>
+        </section>
+        <section class="info-section">
+          <h2>Skill Tree</h2>
+          <p class="skill-intro">
+            Defeat enemies to earn experience, unlock skills, and push deeper
+            into the dungeon.
+          </p>
+          <ul id="skills" class="skill-tree" aria-live="polite"></ul>
+        </section>
+        <section class="info-section">
+          <h2>Event Log</h2>
+          <ul id="log" class="log" aria-live="polite"></ul>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
