@@ -30,18 +30,32 @@ document.addEventListener('DOMContentLoaded', () => {
     progressFill: document.querySelector('[data-progress-fill]'),
     progressValue: document.getElementById('xp-value'),
     skillPointsValue: document.getElementById('skill-points'),
+    currencyValue: document.getElementById('currency'),
     goalValue: document.getElementById('current-goal'),
+    zoneLabel: document.getElementById('zone-label'),
+    timeOfDayValue: document.getElementById('time-of-day'),
+    townFill: document.querySelector('[data-town-fill]'),
+    townLabel: document.getElementById('town-progress-label'),
     skillList: document.getElementById('skills'),
+    inventoryList: document.getElementById('inventory'),
     achievementList: document.getElementById('achievements'),
     log: document.getElementById('log'),
     mapInfo: document.getElementById('map-info'),
+    storyline: document.getElementById('storyline'),
+    npcJournal: document.getElementById('npc-journal'),
     pauseMenu: document.getElementById('pause-menu'),
     resumeButton: document.getElementById('resume-button'),
     restartButton: document.getElementById('restart-button'),
     levelOverlay: document.getElementById('levelup-overlay'),
     upgradeOptions: document.getElementById('upgrade-options'),
     skipUpgrade: document.getElementById('skip-upgrade'),
+    shopOverlay: document.getElementById('shop-overlay'),
+    shopName: document.getElementById('shop-name'),
+    shopDescription: document.getElementById('shop-description'),
+    shopOptions: document.getElementById('shop-options'),
+    leaveShop: document.getElementById('leave-shop'),
     toast: document.getElementById('toast'),
+    prompt: document.getElementById('prompt'),
   };
 
   for (const [key, element] of Object.entries(ui)) {
@@ -63,4 +77,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
   ui.resumeButton.addEventListener('click', () => game.resume());
   ui.restartButton.addEventListener('click', () => game.restart());
+  ui.leaveShop.addEventListener('click', () => game.leaveShop());
 });

@@ -16,23 +16,25 @@ your editor.
 - **Aim:** Arrow keys
 - **Shoot:** Space
 - **Dash:** E
+- **Interact / Talk / Trade:** F
 - **Pause:** Escape
 
 ## What changed in this iteration?
 
-- A lush outdoor world replaces the claustrophobic dungeon. Expect meadows,
-  rivers, plazas, houses, lamps, signs, and plenty of environmental storytelling.
-- Combat balance is tuned for a relaxed adventure: enemies spawn slowly, projectiles
-  are readable, and the hero has tools such as shields, dash trails, and healing
-  perks to stay alive.
-- The HUD is cleaner and richer: map clues, a living event log, skill sparks, and
-  achievements live in translucent panels while the action fills the screen.
-- Pause the game with **Escape** to open a dedicated menu with controls and restart
-  options; gameplay halts while the menu is open.
-- Level ups now open a dynamic upgrade selection overlay that actually grants new
-  mechanics like twin shots, aurora shields, glowing slow fields, and more.
-- Fresh particle FX, smooth movement interpolation, and pastel color palettes bring
-  a warmer, more inviting feel to the scene.
+- The valley is now a connected overworld with two cozy towns, farmland, a firefly
+  sanctuary, and dungeon entrances instead of a single arena. Safe places let you
+  heal, decorate the scenery, and start house construction.
+- Dungeons host all combat. They feature roaming mobs plus bespoke boss guardians
+  that launch patterned barrages and drop valuable loot when defeated.
+- Looting matters: enemies spill glow shards (currency) alongside timber, stone,
+  and rare silk. Trade shards at town shops for weapon, armor, and potion upgrades,
+  or haul building materials back home to raise your personal house.
+- Towns feel alive thanks to NPCs with dialogue, journals to fill, illuminated
+  lamps, market stalls, crop rows, and a story tracker that nudges you toward the
+  next objective.
+- Movement and visuals received a pass—acceleration-based motion, a smoothed
+  camera, animated water, a full day/night sky cycle, glowing highlights, and new
+  decorative sprites lend a modern polish.
 
 ## Project Structure
 

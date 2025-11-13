@@ -18,8 +18,9 @@
       <section class="hud hud--primary" aria-live="polite">
         <h1 class="hud-title">Wanderlight</h1>
         <p class="hud-subtitle">
-          Explore the glowing valley, gather memories, and grow your hero. Move with
-          WASD, aim with the arrow keys, dash with E, shoot with Space.
+          Explore the valley towns, brave the dungeons, and help rebuild the world.
+          Move with WASD, aim with the arrow keys, dash with E, shoot with Space,
+          interact with F, and open the menu with Escape.
         </p>
         <div class="hud-bars">
           <div class="meter" role="presentation">
@@ -60,8 +61,36 @@
           <span id="skill-points" class="hud-value">0</span>
         </div>
         <div class="hud-inline">
+          <span>Glow Shards:</span>
+          <span id="currency" class="hud-value">0</span>
+        </div>
+        <div class="hud-inline">
           <span>Current Goal:</span>
           <span id="current-goal" class="hud-value">Find the sunstone altar</span>
+        </div>
+        <div class="hud-inline">
+          <span>Region:</span>
+          <span id="zone-label" class="hud-value">Aurora Plaza</span>
+        </div>
+        <div class="hud-inline hud-inline--time" aria-live="polite">
+          <span>Time:</span>
+          <span id="time-of-day" class="hud-value">Golden Noon</span>
+        </div>
+        <div class="meter meter--small" role="presentation">
+          <header class="meter-header">
+            <span>Town Project</span>
+            <span id="town-progress-label">Village Hearth</span>
+          </header>
+          <div
+            class="meter-track"
+            role="progressbar"
+            aria-label="Town construction progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div class="meter-fill meter-fill--town" data-town-fill></div>
+          </div>
         </div>
       </section>
 
@@ -69,6 +98,10 @@
         <section class="panel" aria-labelledby="upgrades-heading">
           <h2 id="upgrades-heading">Equipped Upgrades</h2>
           <ul id="skills" class="list" aria-live="polite"></ul>
+        </section>
+        <section class="panel" aria-labelledby="inventory-heading">
+          <h2 id="inventory-heading">Satchel</h2>
+          <ul id="inventory" class="list" aria-live="polite"></ul>
         </section>
         <section class="panel" aria-labelledby="achievements-heading">
           <h2 id="achievements-heading">Achievements</h2>
@@ -83,6 +116,13 @@
       <section class="hud hud--map" aria-label="World markers">
         <h2>Map Clues</h2>
         <ul id="map-info" class="list"></ul>
+        <section class="panel panel--story" aria-labelledby="story-heading">
+          <h2 id="story-heading">Story</h2>
+          <p id="storyline" class="storyline" aria-live="polite">
+            Arrive in the valley and kindle hope in the towns.
+          </p>
+          <ul id="npc-journal" class="list list--journal" aria-live="polite"></ul>
+        </section>
       </section>
 
       <div id="pause-menu" class="overlay overlay--menu" aria-hidden="true">
@@ -100,6 +140,7 @@
               <li>Aim: Arrow Keys</li>
               <li>Shoot: Space</li>
               <li>Dash: E</li>
+              <li>Interact: F</li>
               <li>Menu: Escape</li>
             </ul>
           </div>
@@ -115,7 +156,17 @@
         </div>
       </div>
 
+      <div id="shop-overlay" class="overlay overlay--choices" aria-hidden="true">
+        <div class="overlay-card" role="dialog" aria-modal="true" aria-label="Town shop">
+          <h2 id="shop-name">Aurora Market</h2>
+          <p id="shop-description">Trade glow shards for helpful gear.</p>
+          <div id="shop-options" class="upgrade-grid"></div>
+          <button id="leave-shop" class="button button--ghost">Leave Shop</button>
+        </div>
+      </div>
+
       <div id="toast" role="status" aria-live="assertive" class="toast hidden"></div>
+      <div id="prompt" class="prompt" aria-live="polite"></div>
     </main>
     <script type="module" src="src/main.js"></script>
   </body>

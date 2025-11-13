@@ -1,15 +1,18 @@
 :root {
   color-scheme: dark;
-  --bg: #04060d;
-  --bg-soft: rgba(15, 23, 42, 0.85);
-  --bg-panel: rgba(12, 20, 38, 0.92);
+  --bg: #020510;
+  --bg-soft: rgba(11, 19, 35, 0.78);
+  --bg-panel: rgba(11, 22, 41, 0.94);
+  --bg-panel-bright: rgba(20, 34, 60, 0.92);
   --accent: #fbbf24;
-  --accent-strong: #f97316;
-  --accent-soft: rgba(251, 191, 36, 0.35);
+  --accent-strong: #fb923c;
+  --accent-soft: rgba(251, 191, 36, 0.28);
   --text: #f8fafc;
   --text-soft: #cbd5f5;
   --danger: #f87171;
   --xp: #38bdf8;
+  --town: #a855f7;
+  --shop: rgba(168, 85, 247, 0.16);
   font-size: 16px;
 }
 
@@ -20,9 +23,12 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top, #0f172a 0%, #020617 70%);
+  background: radial-gradient(circle at 20% -10%, #1e293b 0%, rgba(2, 6, 23, 0) 55%),
+    radial-gradient(circle at 80% -10%, #334155 0%, rgba(2, 6, 23, 0) 55%),
+    linear-gradient(180deg, #01030a 0%, #020617 38%, #060b1c 100%);
   font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
   color: var(--text);
+  overflow: hidden;
 }
 
 .game-root {
@@ -34,13 +40,26 @@ body {
   place-items: center;
 }
 
+.game-root::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(circle at 30% 20%, rgba(251, 191, 36, 0.12), transparent 50%),
+    radial-gradient(circle at 70% 25%, rgba(96, 165, 250, 0.12), transparent 55%),
+    radial-gradient(circle at 45% 70%, rgba(16, 185, 129, 0.09), transparent 60%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 canvas#game {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  image-rendering: pixelated;
+  image-rendering: auto;
   background: transparent;
+  filter: saturate(1.15) contrast(1.05);
 }
 
 .hud {
@@ -73,7 +92,10 @@ canvas#game {
 .hud--map {
   bottom: 2rem;
   left: 2rem;
-  max-height: 22rem;
+  max-height: 24rem;
+  width: 22rem;
+  display: grid;
+  gap: 1rem;
   overflow-y: auto;
 }
 
@@ -97,6 +119,18 @@ canvas#game {
   margin-top: 0.35rem;
 }
 
+.hud-inline--time {
+  align-items: center;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.hud-inline--time .hud-value {
+  color: #fbbf24;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
+}
+
 .hud-value {
   color: var(--accent);
   font-weight: 600;
@@ -110,6 +144,10 @@ canvas#game {
 .meter {
   display: grid;
   gap: 0.4rem;
+}
+
+.meter--small .meter-track {
+  height: 0.6rem;
 }
 
 .meter-header {
@@ -140,6 +178,10 @@ canvas#game {
   background: linear-gradient(90deg, var(--xp), #818cf8);
 }
 
+.meter-fill--town {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.85), rgba(59, 130, 246, 0.9));
+}
+
 .panel {
   background: var(--bg-panel);
   border-radius: 16px;
@@ -152,6 +194,11 @@ canvas#game {
   margin-top: 0;
   font-size: 1.05rem;
   letter-spacing: 0.04em;
+}
+
+.panel--story {
+  background: var(--bg-panel-bright);
+  border: 1px solid rgba(148, 163, 184, 0.28);
 }
 
 .list {
@@ -169,6 +216,15 @@ canvas#game {
   overflow-y: auto;
 }
 
+.list--journal {
+  margin-top: 0.8rem;
+  color: var(--text-soft);
+}
+
+.list--journal li {
+  background: rgba(148, 163, 184, 0.12);
+}
+
 .list li {
   padding: 0.45rem 0.55rem;
   background: rgba(148, 163, 184, 0.08);
@@ -179,6 +235,17 @@ canvas#game {
 
 .list li strong {
   color: var(--text);
+}
+
+.storyline {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.4;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .overlay {
@@ -324,6 +391,27 @@ canvas#game {
   display: none;
 }
 
+.prompt {
+  position: absolute;
+  bottom: 1.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.65rem 1.3rem;
+  background: rgba(30, 64, 175, 0.75);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.prompt.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-6px);
+}
+
 @media (max-width: 1024px) {
   .hud--secondary {
     display: none;
@@ -335,6 +423,7 @@ canvas#game {
 
   .hud--map {
     right: 2rem;
+    width: min(90vw, 20rem);
   }
 }
 

@@ -14,9 +14,11 @@ const DIRECTIONS = {
 const AIM_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const MOVE_KEYS = new Set(['w', 'a', 's', 'd']);
 
-const WORLD_PADDING_TILES = 10;
-const PLAYER_BASE_SPEED = 3.2; // tiles per second
-const PLAYER_SPRINT_SPEED = 5.6;
+const WORLD_PADDING_TILES = 12;
+const PLAYER_BASE_SPEED = 3.4; // tiles per second
+const PLAYER_SPRINT_SPEED = 6.2;
+const PLAYER_ACCELERATION = 14;
+const PLAYER_FRICTION = 11;
 const PLAYER_BASE_HEALTH = 120;
 const PLAYER_DASH_DISTANCE = 4;
 const PLAYER_DASH_COOLDOWN = 1.8;
@@ -24,6 +26,8 @@ const PLAYER_SHOT_INTERVAL = 0.4;
 const PLAYER_BASE_DAMAGE = 12;
 const PLAYER_PROJECTILE_SPEED = 12;
 const PLAYER_PROJECTILE_LIFETIME = 2.4;
+
+const PLAYER_HOUSE_PROGRESS_TARGET = 120;
 
 const ENEMY_BASE_HEALTH = 28;
 const ENEMY_BASE_SPEED = 1.3;
@@ -35,20 +39,35 @@ const ENEMY_PROJECTILE_SPEED = 8;
 const ENEMY_PROJECTILE_DAMAGE = 9;
 const ENEMY_PROJECTILE_LIFETIME = 4;
 
+const BOSS_HEALTH = 220;
+const BOSS_FIRE_INTERVAL = 1.6;
+const BOSS_PROJECTILE_SPEED = 13;
+const BOSS_CONTACT_DAMAGE = 18;
+const BOSS_PROJECTILE_DAMAGE = 14;
+
 const PICKUP_ATTRACTION_RANGE = 3;
 const PICKUP_ATTRACTION_SPEED = 2.4;
 
 const XP_PER_LEVEL = 60;
 const LEVEL_XP_GROWTH = 25;
 
+const DAY_NIGHT_DURATION = 180;
+const SKY_STARS = 45;
+
 const TILE_TYPES = {
-  grass: { color: '#18382b', variants: ['#1c3d33', '#1f4538', '#214d3c'] },
-  meadow: { color: '#244732', variants: ['#28523a', '#30593f', '#356246'] },
-  path: { color: '#5f513b', variants: ['#6a573f', '#755f43', '#816847'] },
-  sand: { color: '#8f6f43', variants: ['#987548', '#a17c4d', '#aa8352'] },
-  water: { color: '#163c54', variants: ['#1a4560', '#1f506d', '#235a79'], blocked: true },
-  stone: { color: '#3d434f', variants: ['#454b58', '#4d5360', '#555b68'], blocked: true },
-  plaza: { color: '#3c3a50', variants: ['#3f3f57', '#44455f', '#494c66'] },
+  grass: { color: '#2f6f52', variants: ['#32795a', '#2a6247', '#3a7f5c'] },
+  meadow: { color: '#3c8b63', variants: ['#3f946b', '#35805a', '#45a06f'] },
+  grove: { color: '#2b4e7d', variants: ['#2f5888', '#2c4f80', '#336091'] },
+  path: { color: '#8c6b4d', variants: ['#966f50', '#a17758', '#b08262'] },
+  sand: { color: '#d0a871', variants: ['#d7b17c', '#e0bc87', '#cfa36b'] },
+  water: { color: '#1d4d7a', variants: ['#1f5888', '#226497', '#2670a6'], blocked: true },
+  stone: { color: '#4b5568', variants: ['#5b6476', '#4f5a6d', '#616b83'], blocked: true },
+  plaza: { color: '#58537b', variants: ['#5f5b85', '#66628f', '#6d69a0'] },
+  townTile: { color: '#4f4a82', variants: ['#5a5591', '#655f9f', '#7069ae'] },
+  farmland: { color: '#7c5f43', variants: ['#8a6a4b', '#9b7855', '#a8845d'] },
+  sanctuary: { color: '#284b76', variants: ['#2e5686', '#335f93', '#3a6aa3'] },
+  dungeonFloor: { color: '#2d323f', variants: ['#343a48', '#3a4151', '#41495a'] },
+  dungeonWall: { color: '#1b1f28', variants: ['#202531', '#242a38', '#293041'], blocked: true },
 };
 
 const SCENERY_COLORS = {
@@ -58,11 +77,120 @@ const SCENERY_COLORS = {
   lampPost: '#fcd34d',
   houseWall: '#f8f0e0',
   houseRoof: '#c084fc',
+  marketStall: '#38bdf8',
+  farmCrop: '#facc15',
+  npcCloak: ['#38bdf8', '#f472b6', '#facc15'],
 };
 
 const ENEMY_PALETTE = ['#f472b6', '#fb7185', '#60a5fa'];
 const BULLET_COLOR = '#facc15';
 const ENEMY_BULLET_COLOR = '#38bdf8';
+
+const BOSS_PALETTE = ['#f97316', '#a855f7', '#38bdf8'];
+
+const LOOT_TABLE = [
+  { id: 'lumen-shard', name: 'Lumen Shard', description: 'Currency of the valley.', value: 6 },
+  { id: 'timber', name: 'Bundle of Timber', description: 'Useful for rebuilding town structures.', value: 10 },
+  { id: 'stone', name: 'Polished Stone', description: 'Perfect for sturdy foundations.', value: 8 },
+  { id: 'silk', name: 'Shimmering Silk', description: 'NPCs love receiving this rare cloth.', value: 14 },
+];
+
+const SHOP_LIBRARY = [
+  {
+    id: 'weapons',
+    name: 'Gleam & Arrow Forge',
+    description: 'Upgrade weapons forged with starlit alloys.',
+    stock: [
+      { id: 'bowstring', label: 'Silver Bowstring', cost: 35, effect: (player) => (player.damage += 6) },
+      {
+        id: 'scope',
+        label: 'Aurora Scope',
+        cost: 45,
+        effect: (player) => {
+          player.projectileSpeed *= 1.2;
+          player.projectileLifetime += 0.6;
+        },
+      },
+    ],
+  },
+  {
+    id: 'armory',
+    name: 'Luminous Warding',
+    description: 'Protective cloaks woven from moonthread.',
+    stock: [
+      {
+        id: 'cloak',
+        label: 'Moonthread Cloak',
+        cost: 40,
+        effect: (player) => {
+          player.maxHealth += 20;
+          player.health = Math.min(player.maxHealth, player.health + 20);
+        },
+      },
+      {
+        id: 'boots',
+        label: 'Glider Boots',
+        cost: 32,
+        effect: (player) => {
+          player.speed *= 1.1;
+          player.dashCooldown *= 0.9;
+        },
+      },
+    ],
+  },
+  {
+    id: 'alchemy',
+    name: 'Bramblebrew Cart',
+    description: 'Potions to refresh mind, body, and spirit.',
+    stock: [
+      {
+        id: 'tonic',
+        label: 'Soothing Tonic',
+        cost: 22,
+        effect: (player) => {
+          player.health = Math.min(player.maxHealth, player.health + 30);
+        },
+      },
+      {
+        id: 'elixir',
+        label: 'Farsight Elixir',
+        cost: 28,
+        effect: (player) => {
+          player.shootInterval *= 0.85;
+          player.damage += 2;
+        },
+      },
+    ],
+  },
+];
+
+const NPC_LIBRARY = [
+  {
+    id: 'mayor',
+    name: 'Mayor Lyra',
+    line: 'The valley thrives when its lamps are lit. Thank you for rebuilding.',
+    journal: 'Lyra promised to help furnish my home once the frame is finished.',
+  },
+  {
+    id: 'scout',
+    name: 'Scout Emil',
+    line: 'Dungeons only wake when brave souls enter. I can guide you to each door.',
+    journal: 'Emil marked the entrances to Duskwater Catacombs and Emberfen Gate.',
+  },
+  {
+    id: 'artisan',
+    name: 'Artisan Mila',
+    line: 'Bring timber and stone and we will raise walls that shimmer like dawn.',
+    journal: 'Mila will help finish my house once I supply more materials.',
+  },
+];
+
+const STORY_BEATS = [
+  { id: 'arrival', text: 'Arrive in Aurora Plaza and speak with the townsfolk.' },
+  { id: 'first-dungeon', text: 'Clear your first dungeon to recover ancient plans.' },
+  { id: 'house-finished', text: 'Finish building your home in the heart of town.' },
+  { id: 'boss-victory', text: 'Defeat a dungeon boss to secure the valley.' },
+];
 
 const UPGRADE_LIBRARY = [
   {
@@ -160,11 +288,11 @@ const ACHIEVEMENT_LIBRARY = [
 ];
 
 const GOALS = [
-  'Find the sunstone altar',
-  'Rescue the wandering firefly spirit',
-  'Relight the valley lamps',
-  'Gather the moonpetal blooms',
-  'Discover the hidden hot spring',
+  'Support Aurora Plaza by finishing your cozy home',
+  'Defeat a guardian deep within a dungeon',
+  'Trade glow shards with the valley shopkeepers',
+  'Collect timber and stone to help the townsfolk rebuild',
+  'Explore the sanctuary and calm the fireflies',
 ];
 
 function clamp(value, min, max) {
@@ -197,12 +325,33 @@ function normalize(v) {
   return { x: v.x / len, y: v.y / len };
 }
 
+function hexToRgb(hex) {
+  const value = hex.replace('#', '');
+  const bigint = parseInt(value, 16);
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255,
+  };
+}
+
+function mixColor(a, b, t) {
+  const colorA = hexToRgb(a);
+  const colorB = hexToRgb(b);
+  const lerpChannel = (channel) => Math.round(colorA[channel] + (colorB[channel] - colorA[channel]) * t);
+  const r = lerpChannel('r');
+  const g = lerpChannel('g');
+  const b = lerpChannel('b');
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 class InputHandler {
   #pressed = new Set();
   #aim = new Set();
   #shootListeners = new Set();
   #dashListeners = new Set();
   #pauseListeners = new Set();
+  #interactListeners = new Set();
 
   constructor() {
     window.addEventListener('keydown', (event) => this.#handleKeyDown(event));
@@ -229,6 +378,11 @@ class InputHandler {
     if (key === 'e' || key === 'E') {
       event.preventDefault();
       this.#dashListeners.forEach((cb) => cb());
+    }
+
+    if (key === 'f' || key === 'F') {
+      event.preventDefault();
+      this.#interactListeners.forEach((cb) => cb());
     }
 
     if (key === 'Escape') {
@@ -282,6 +436,11 @@ class InputHandler {
   onDash(callback) {
     this.#dashListeners.add(callback);
     return () => this.#dashListeners.delete(callback);
+  }
+
+  onInteract(callback) {
+    this.#interactListeners.add(callback);
+    return () => this.#interactListeners.delete(callback);
   }
 
   onPause(callback) {
@@ -343,8 +502,30 @@ class UIController {
     this.ui.skillPointsValue.textContent = `${points}`;
   }
 
+  setCurrency(value) {
+    this.ui.currencyValue.textContent = `${value}`;
+  }
+
   setGoal(text) {
     this.ui.goalValue.textContent = text;
+  }
+
+  setZone(text) {
+    this.ui.zoneLabel.textContent = text;
+  }
+
+  setTimeOfDay(text) {
+    if (this.ui.timeOfDayValue) {
+      this.ui.timeOfDayValue.textContent = text;
+    }
+  }
+
+  setTownProgress(label, ratio) {
+    this.ui.townLabel.textContent = label;
+    const clamped = clamp(ratio, 0, 1);
+    const percent = Math.round(clamped * 100);
+    this.ui.townFill.style.width = `${percent}%`;
+    this.ui.townFill.parentElement?.setAttribute('aria-valuenow', `${percent}`);
   }
 
   setUpgrades(upgrades) {
@@ -386,12 +567,83 @@ class UIController {
     }
   }
 
+  setInventory(items) {
+    this.ui.inventoryList.innerHTML = '';
+    if (items.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'Your satchel is empty. Venture into the dungeons to gather loot.';
+      this.ui.inventoryList.appendChild(li);
+      return;
+    }
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${item.name}</strong><br/>${item.description}`;
+      this.ui.inventoryList.appendChild(li);
+    }
+  }
+
+  setStory(text) {
+    this.ui.storyline.textContent = text;
+  }
+
+  setJournal(entries) {
+    this.ui.npcJournal.innerHTML = '';
+    if (entries.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'No journal notes yet. Talk to townsfolk to learn more.';
+      this.ui.npcJournal.appendChild(li);
+      return;
+    }
+    for (const entry of entries) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${entry.name}</strong><br/>${entry.note}`;
+      this.ui.npcJournal.appendChild(li);
+    }
+  }
+
   showMenu(show) {
     this.ui.pauseMenu.setAttribute('aria-hidden', show ? 'false' : 'true');
   }
 
   showLevelOverlay(show) {
     this.ui.levelOverlay.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  showShop(shop, onPurchase, onClose) {
+    this.ui.shopName.textContent = shop.name;
+    this.ui.shopDescription.textContent = shop.description;
+    this.ui.shopOptions.innerHTML = '';
+    for (const item of shop.stock) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'upgrade-option';
+      button.innerHTML = `<h3>${item.label}</h3><p>Cost: ${item.cost} shards</p>`;
+      button.addEventListener('click', () => onPurchase(item));
+      this.ui.shopOptions.appendChild(button);
+    }
+    this.ui.leaveShop.onclick = onClose;
+    this.ui.shopOverlay.setAttribute('aria-hidden', 'false');
+    const firstButton = this.ui.shopOptions.querySelector('button');
+    firstButton?.focus();
+  }
+
+  hideShop() {
+    this.ui.shopOverlay.setAttribute('aria-hidden', 'true');
+    this.ui.shopOptions.innerHTML = '';
+  }
+
+  showPrompt(text) {
+    if (!text) {
+      this.ui.prompt.textContent = '';
+      this.ui.prompt.classList.remove('show');
+      return;
+    }
+    this.ui.prompt.textContent = text;
+    this.ui.prompt.classList.add('show');
+  }
+
+  clearPrompt() {
+    this.showPrompt('');
   }
 
   showToast(message) {
@@ -458,9 +710,18 @@ class ParticleSystem {
       .filter((p) => p.life > 0);
   }
 
-  draw(context) {
+  draw(context, view) {
     for (const particle of this.particles) {
       const alpha = clamp(particle.life, 0, 1);
+      if (
+        view &&
+        (particle.x < view.offsetX - 2 ||
+          particle.x > view.offsetX + view.viewWidth + 2 ||
+          particle.y < view.offsetY - 2 ||
+          particle.y > view.offsetY + view.viewHeight + 2)
+      ) {
+        continue;
+      }
       context.fillStyle = particle.color;
       context.globalAlpha = alpha;
       context.beginPath();
@@ -482,37 +743,45 @@ class World {
     this.width = width;
     this.height = height;
     this.tiles = Array.from({ length: height }, () =>
-      Array.from({ length: width }, () => ({ type: 'grass', variant: 0 }))
+      Array.from({ length: width }, () => ({ type: 'meadow', variant: randInt(0, 2), zone: 'wilds' }))
     );
     this.decorations = [];
-    this.signs = [];
     this.lamps = [];
-    this.spawnPoint = { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+    this.signs = [];
+    this.mapClues = [];
+    this.shops = [];
+    this.npcs = [];
+    this.towns = [];
+    this.dungeons = [];
+    this.housePlots = [];
     this.enemySpawns = [];
   }
 
   static generate(width, height) {
     const world = new World(width, height);
     world.#generateTerrain();
-    world.#placeDecorations();
-    world.#placePointsOfInterest();
+    world.#buildSettlements();
+    world.#carveDungeons();
+    world.#decorate();
+    world.#placeSignsAndClues();
     return world;
-  }
-
-  #setTile(x, y, type) {
-    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    const variants = TILE_TYPES[type]?.variants ?? [TILE_TYPES[type]?.color];
-    this.tiles[y][x] = {
-      type,
-      variant: randInt(0, variants.length - 1),
-    };
   }
 
   getTile(x, y) {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) {
-      return { type: 'stone', variant: 0 };
+      return { type: 'stone', variant: 0, zone: 'void' };
     }
-    return this.tiles[y][x];
+    return this.tiles[Math.floor(y)][Math.floor(x)];
+  }
+
+  #setTile(x, y, type, zone) {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+    const tile = this.tiles[Math.floor(y)][Math.floor(x)];
+    tile.type = type;
+    tile.variant = randInt(0, (TILE_TYPES[type]?.variants?.length || 1) - 1);
+    if (zone) {
+      tile.zone = zone;
+    }
   }
 
   isWalkable(x, y) {
@@ -522,136 +791,363 @@ class World {
     return !(info?.blocked ?? false);
   }
 
+  isTown(x, y) {
+    return this.getTile(Math.floor(x), Math.floor(y)).zone === 'town';
+  }
+
+  isSanctuary(x, y) {
+    const zone = this.getTile(Math.floor(x), Math.floor(y)).zone;
+    return zone === 'sanctuary';
+  }
+
+  getTownAt(x, y) {
+    return this.towns.find((town) =>
+      x >= town.bounds.x1 &&
+      x <= town.bounds.x2 &&
+      y >= town.bounds.y1 &&
+      y <= town.bounds.y2
+    );
+  }
+
+  getZoneName(x, y) {
+    const dungeon = this.getDungeonAt(x, y);
+    if (dungeon) return `${dungeon.name}`;
+    const town = this.getTownAt(x, y);
+    if (town) return town.name;
+    if (this.isSanctuary(x, y)) return 'Glittering Sanctuary';
+    return 'Sunset Wilds';
+  }
+
+  getDungeonAt(x, y) {
+    return this.dungeons.find((d) =>
+      x >= d.bounds.x1 &&
+      x <= d.bounds.x2 &&
+      y >= d.bounds.y1 &&
+      y <= d.bounds.y2
+    );
+  }
+
+  getShopNear(x, y) {
+    return this.shops.find((shop) => Math.hypot(shop.x - x, shop.y - y) < 1.6);
+  }
+
+  getNpcNear(x, y) {
+    return this.npcs.find((npc) => Math.hypot(npc.x - x, npc.y - y) < 1.6);
+  }
+
+  getHousePlotNear(x, y) {
+    return this.housePlots.find((plot) => Math.hypot(plot.x - x, plot.y - y) < 1.2);
+  }
+
   #generateTerrain() {
-    // Base layers: meadow gradients and river
+    const midY = this.height / 2;
     for (let y = 0; y < this.height; y += 1) {
       for (let x = 0; x < this.width; x += 1) {
-        const distanceToCenter = Math.abs(y - this.height / 2);
-        const type = distanceToCenter < this.height / 3 ? 'meadow' : 'grass';
-        this.#setTile(x, y, type);
+        const vertical = Math.abs(y - midY) / midY;
+        const blend = clamp(vertical, 0, 1);
+        const type = blend < 0.35 ? 'meadow' : blend < 0.6 ? 'grass' : 'grove';
+        this.#setTile(x, y, type, 'wilds');
       }
     }
 
-    // Winding path connecting spawn to outskirts
-    let cx = randInt(Math.floor(this.width * 0.2), Math.floor(this.width * 0.8));
-    let cy = randInt(Math.floor(this.height * 0.2), Math.floor(this.height * 0.8));
-    this.spawnPoint = { x: cx, y: cy };
-
-    const target = {
-      x: randInt(Math.floor(this.width * 0.1), Math.floor(this.width * 0.9)),
-      y: randInt(Math.floor(this.height * 0.1), Math.floor(this.height * 0.9)),
+    this.spawnPoint = {
+      x: Math.floor(this.width / 2) + randInt(-4, 4),
+      y: Math.floor(this.height / 2) + randInt(-4, 4),
     };
 
-    for (let i = 0; i < this.width * 3; i += 1) {
-      this.#setTile(cx, cy, 'path');
-      if (Math.random() < 0.25) {
-        this.#setTile(cx + 1, cy, 'path');
-        this.#setTile(cx, cy + 1, 'path');
-      }
-      const dx = Math.sign(target.x - cx) + randInt(-1, 1);
-      const dy = Math.sign(target.y - cy) + randInt(-1, 1);
-      cx = clamp(cx + dx, 2, this.width - 3);
-      cy = clamp(cy + dy, 2, this.height - 3);
-      if (Math.hypot(cx - target.x, cy - target.y) < 2) break;
-    }
+    this.#carveRiver();
+    this.#carvePath(
+      this.spawnPoint.x,
+      this.spawnPoint.y,
+      clamp(this.spawnPoint.x + randInt(-10, 10), 6, this.width - 6),
+      clamp(this.spawnPoint.y - randInt(10, 16), 6, this.height - 6),
+      2
+    );
+  }
 
-    // River meandering top to bottom
-    let rx = randInt(Math.floor(this.width * 0.2), Math.floor(this.width * 0.4));
+  #carveRiver() {
+    let rx = randInt(Math.floor(this.width * 0.25), Math.floor(this.width * 0.4));
     for (let y = 0; y < this.height; y += 1) {
-      const width = 2 + Math.floor(Math.sin(y / 6) * 2 + Math.random() * 2);
+      const width = 2 + Math.floor(Math.sin(y / 5) * 1.8 + Math.random() * 1.8);
       for (let x = -width; x <= width; x += 1) {
-        this.#setTile(clamp(rx + x, 0, this.width - 1), y, 'water');
-      }
-      rx = clamp(rx + randInt(-1, 1), 2, this.width - 3);
-    }
-
-    // Plaza near spawn
-    for (let y = -2; y <= 2; y += 1) {
-      for (let x = -2; x <= 2; x += 1) {
-        this.#setTile(this.spawnPoint.x + x, this.spawnPoint.y + y, 'plaza');
-      }
-    }
-
-    // Sandy shore near river edges
-    for (let y = 0; y < this.height; y += 1) {
-      for (let x = 0; x < this.width; x += 1) {
-        if (this.getTile(x, y).type === 'water') {
-          for (const dir of Object.values(DIRECTIONS)) {
-            const nx = x + dir.x;
-            const ny = y + dir.y;
-            const tile = this.getTile(nx, ny);
-            if (tile.type !== 'water' && tile.type !== 'sand') {
-              this.#setTile(nx, ny, 'sand');
-            }
+        const worldX = clamp(rx + x, 1, this.width - 2);
+        this.#setTile(worldX, y, 'water', 'wilds');
+        for (const dir of Object.values(DIRECTIONS)) {
+          const nx = worldX + dir.x;
+          const ny = y + dir.y;
+          const tile = this.getTile(nx, ny);
+          if (tile.type !== 'water') {
+            this.#setTile(nx, ny, 'sand', 'wilds');
           }
         }
       }
+      rx = clamp(rx + randInt(-1, 1), 2, this.width - 3);
     }
   }
 
-  #placeDecorations() {
-    for (let i = 0; i < this.width * this.height * 0.04; i += 1) {
+  #carvePath(x1, y1, x2, y2, width = 1) {
+    let cx = x1;
+    let cy = y1;
+    const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) * 2;
+    for (let i = 0; i < steps; i += 1) {
+      for (let wy = -width; wy <= width; wy += 1) {
+        for (let wx = -width; wx <= width; wx += 1) {
+          this.#setTile(cx + wx, cy + wy, 'path', 'wilds');
+        }
+      }
+      if (Math.hypot(cx - x2, cy - y2) < 2) break;
+      const dirX = clamp(Math.sign(x2 - cx) + randInt(-1, 1), -1, 1);
+      const dirY = clamp(Math.sign(y2 - cy) + randInt(-1, 1), -1, 1);
+      cx = clamp(cx + dirX, 2, this.width - 3);
+      cy = clamp(cy + dirY, 2, this.height - 3);
+    }
+  }
+
+  #buildSettlements() {
+    this.#buildTown({
+      name: 'Aurora Plaza',
+      center: this.spawnPoint,
+      size: 6,
+      housePlots: 3,
+      shops: ['weapons', 'armory'],
+      npcs: ['mayor', 'artisan'],
+    });
+
+    const secondaryTownCenter = {
+      x: clamp(this.spawnPoint.x + randInt(-18, 18), 8, this.width - 8),
+      y: clamp(this.spawnPoint.y + randInt(12, 20), 8, this.height - 8),
+    };
+
+    this.#carvePath(
+      this.spawnPoint.x,
+      this.spawnPoint.y + 1,
+      secondaryTownCenter.x,
+      secondaryTownCenter.y,
+      2
+    );
+
+    this.#buildTown({
+      name: 'Glinting Market',
+      center: secondaryTownCenter,
+      size: 5,
+      housePlots: 1,
+      shops: ['alchemy'],
+      npcs: ['scout'],
+    });
+
+    const sanctuaryCenter = {
+      x: clamp(this.spawnPoint.x - randInt(14, 20), 6, this.width - 6),
+      y: clamp(this.spawnPoint.y - randInt(14, 20), 6, this.height - 6),
+    };
+    this.#carvePath(this.spawnPoint.x, this.spawnPoint.y, sanctuaryCenter.x, sanctuaryCenter.y, 1);
+    for (let y = -3; y <= 3; y += 1) {
+      for (let x = -3; x <= 3; x += 1) {
+        const dist = Math.hypot(x, y);
+        if (dist <= 3.2) {
+          this.#setTile(sanctuaryCenter.x + x, sanctuaryCenter.y + y, 'sanctuary', 'sanctuary');
+        }
+      }
+    }
+    this.decorations.push({ x: sanctuaryCenter.x, y: sanctuaryCenter.y, type: 'campfire' });
+    this.lamps.push({ x: sanctuaryCenter.x + 0.5, y: sanctuaryCenter.y + 0.4 });
+  }
+
+  #buildTown({ name, center, size, housePlots, shops, npcs }) {
+    const bounds = {
+      x1: clamp(center.x - size, 2, this.width - 3),
+      y1: clamp(center.y - size, 2, this.height - 3),
+      x2: clamp(center.x + size, 2, this.width - 3),
+      y2: clamp(center.y + size, 2, this.height - 3),
+    };
+
+    for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+      for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+        const dx = Math.abs(x - center.x);
+        const dy = Math.abs(y - center.y);
+        if (dx <= 1 && dy <= 1) {
+          this.#setTile(x, y, 'plaza', 'town');
+        } else {
+          this.#setTile(x, y, 'townTile', 'town');
+        }
+      }
+    }
+
+    for (let i = 0; i < housePlots; i += 1) {
+      const offsetX = randInt(-size + 1, size - 1);
+      const offsetY = randInt(-size + 1, size - 1);
+      const plot = { x: center.x + offsetX, y: center.y + offsetY, progress: 0 };
+      this.housePlots.push(plot);
+      this.decorations.push({ x: plot.x, y: plot.y, type: 'house-frame' });
+    }
+
+    for (let x = bounds.x1 - 2; x <= bounds.x2 + 2; x += 1) {
+      for (let y = bounds.y2 + 1; y <= bounds.y2 + 3; y += 1) {
+        this.#setTile(x, y, 'farmland', 'town');
+        if (Math.random() < 0.35) {
+          this.decorations.push({ x, y, type: 'crop' });
+        }
+      }
+    }
+
+    for (const shopId of shops) {
+      const libraryEntry = SHOP_LIBRARY.find((item) => item.id === shopId);
+      if (!libraryEntry) continue;
+      const sx = clamp(center.x + randInt(-size + 1, size - 1), bounds.x1 + 1, bounds.x2 - 1);
+      const sy = clamp(center.y + randInt(-size + 1, size - 1), bounds.y1 + 1, bounds.y2 - 1);
+      this.shops.push({
+        id: libraryEntry.id,
+        name: libraryEntry.name,
+        description: libraryEntry.description,
+        stock: libraryEntry.stock.map((item) => ({ ...item })),
+        x: sx + 0.5,
+        y: sy + 0.5,
+      });
+      this.decorations.push({ x: sx, y: sy, type: 'market' });
+      this.lamps.push({ x: sx + 0.5, y: sy - 0.3 });
+    }
+
+    for (const npcId of npcs) {
+      const info = NPC_LIBRARY.find((entry) => entry.id === npcId);
+      if (!info) continue;
+      const nx = clamp(center.x + randInt(-size + 1, size - 1), bounds.x1 + 1, bounds.x2 - 1);
+      const ny = clamp(center.y + randInt(-size + 1, size - 1), bounds.y1 + 1, bounds.y2 - 1);
+      this.npcs.push({
+        id: info.id,
+        name: info.name,
+        line: info.line,
+        journal: info.journal,
+        x: nx + 0.5,
+        y: ny + 0.5,
+        color: pick(SCENERY_COLORS.npcCloak),
+      });
+    }
+
+    this.towns.push({ name, bounds, center });
+  }
+
+  #carveDungeons() {
+    const dungeonConfigs = [
+      {
+        name: 'Duskwater Catacombs',
+        center: {
+          x: clamp(this.spawnPoint.x + randInt(-24, -16), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y + randInt(14, 24), 6, this.height - 6),
+        },
+      },
+      {
+        name: 'Emberfen Gate',
+        center: {
+          x: clamp(this.spawnPoint.x + randInt(18, 28), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y - randInt(16, 24), 6, this.height - 6),
+        },
+      },
+    ];
+
+    for (const config of dungeonConfigs) {
+      const size = randInt(6, 8);
+      const bounds = {
+        x1: clamp(config.center.x - size, 3, this.width - 4),
+        y1: clamp(config.center.y - size, 3, this.height - 4),
+        x2: clamp(config.center.x + size, 3, this.width - 4),
+        y2: clamp(config.center.y + size, 3, this.height - 4),
+      };
+
+      for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+        for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+          const edge = x === bounds.x1 || x === bounds.x2 || y === bounds.y1 || y === bounds.y2;
+          this.#setTile(x, y, edge ? 'dungeonWall' : 'dungeonFloor', 'dungeon');
+        }
+      }
+
+      const entranceX = clamp(config.center.x, bounds.x1 + 1, bounds.x2 - 1);
+      const entranceY = bounds.y1;
+      this.#setTile(entranceX, entranceY, 'path', 'wilds');
+      this.#carvePath(entranceX, entranceY, this.spawnPoint.x, this.spawnPoint.y, 1);
+
+      const spawnPoints = [];
+      for (let i = 0; i < 4; i += 1) {
+        spawnPoints.push({
+          x: randInt(bounds.x1 + 1, bounds.x2 - 1) + randRange(-0.2, 0.2),
+          y: randInt(bounds.y1 + 1, bounds.y2 - 1) + randRange(-0.2, 0.2),
+        });
+      }
+
+      this.dungeons.push({
+        name: config.name,
+        bounds,
+        spawnPoints,
+        boss: { spawned: false, defeated: false },
+        entrance: { x: entranceX + 0.5, y: entranceY + 0.5 },
+      });
+
+      this.signs.push({ x: entranceX, y: entranceY - 1, text: config.name });
+    }
+  }
+
+  #decorate() {
+    const area = this.width * this.height;
+    for (let i = 0; i < area * 0.04; i += 1) {
       const x = randInt(2, this.width - 3);
       const y = randInt(2, this.height - 3);
       const tile = this.getTile(x, y);
-      if (tile.type === 'grass' || tile.type === 'meadow') {
-        this.decorations.push({ x, y, type: 'tree' });
-        if (Math.random() < 0.15) {
-          this.decorations.push({ x, y, type: 'blossom' });
+      if (tile.zone === 'wilds' && (tile.type === 'grass' || tile.type === 'meadow')) {
+        this.decorations.push({ x, y, type: 'tree', color: pick(SCENERY_COLORS.treeLeaves) });
+        if (Math.random() < 0.1) {
+          this.decorations.push({ x, y, type: 'blossom', color: SCENERY_COLORS.blossom });
         }
       }
     }
 
-    for (let i = 0; i < this.width * this.height * 0.02; i += 1) {
+    for (let i = 0; i < area * 0.02; i += 1) {
       const x = randInt(3, this.width - 4);
       const y = randInt(3, this.height - 4);
       const tile = this.getTile(x, y);
-      if (tile.type === 'grass' || tile.type === 'meadow') {
-        this.decorations.push({ x, y, type: 'rock' });
-        this.#setTile(x, y, 'stone');
+      if (tile.zone === 'wilds' && tile.type !== 'water') {
+        this.decorations.push({ x, y, type: 'rock', color: '#94a3b8' });
+      }
+    }
+
+    for (const town of this.towns) {
+      for (let i = 0; i < 4; i += 1) {
+        const angle = (i / 4) * Math.PI * 2;
+        const radius = randRange(2.5, 3.5);
+        const lx = Math.round(town.center.x + Math.cos(angle) * radius);
+        const ly = Math.round(town.center.y + Math.sin(angle) * radius);
+        this.lamps.push({ x: lx + 0.5, y: ly + 0.5 });
       }
     }
   }
 
-  #placePointsOfInterest() {
-    const houseCount = 3 + randInt(0, 2);
-    for (let i = 0; i < houseCount; i += 1) {
-      const hx = randInt(4, this.width - 6);
-      const hy = randInt(4, this.height - 6);
-      for (let y = -1; y <= 1; y += 1) {
-        for (let x = -1; x <= 1; x += 1) {
-          this.#setTile(hx + x, hy + y, 'plaza');
-        }
-      }
-      this.decorations.push({ x: hx, y: hy, type: 'house' });
-      this.lamps.push({ x: hx + 2.2, y: hy - 1.4 });
-      this.enemySpawns.push({ x: hx + randRange(-2, 2), y: hy + randRange(-2, 2) });
+  #placeSignsAndClues() {
+    const clues = [];
+    for (const town of this.towns) {
+      clues.push({
+        title: town.name,
+        description: 'A peaceful haven where you can trade, rest, and continue building.',
+      });
     }
 
-    const signTexts = [
-      { title: 'Aurora Plaza', description: 'Safe haven. Gather upgrades here.' },
-      { title: 'Moonpetal Meadow', description: 'Slower foes, gather glowing petals.' },
-      { title: 'Luminous Brook', description: 'Water slows everything – watch your dash!' },
-      { title: 'Sunstone Altar', description: 'Follow the path east to reach the altar.' },
-    ];
-
-    for (const info of signTexts) {
-      const x = clamp(
-        this.spawnPoint.x + randInt(-12, 12),
-        4,
-        this.width - 5
-      );
-      const y = clamp(
-        this.spawnPoint.y + randInt(-12, 12),
-        4,
-        this.height - 5
-      );
-      this.signs.push({ x, y, text: info.title });
+    for (const dungeon of this.dungeons) {
+      clues.push({
+        title: dungeon.name,
+        description: 'Dangerous depths hide relics and bosses. Enemies only awaken inside.',
+      });
     }
 
-    this.mapClues = signTexts.map((entry) => ({ ...entry }));
+    clues.push({
+      title: 'Glittering Sanctuary',
+      description: 'A safe grove where glowing fireflies gather. Stand here to recover.',
+    });
+
+    clues.push({
+      title: 'Home Plot',
+      description: 'Bring timber and stone from dungeons to finish building your valley home.',
+    });
+
+    this.mapClues = clues;
   }
 }
+
 
 function createProjectile({
   x,
@@ -693,6 +1189,13 @@ export class RoguelikeGame {
     this.particles = new ParticleSystem();
     this.lastTime = 0;
     this.state = 'loading';
+    this.timeOfDay = DAY_NIGHT_DURATION * 0.4;
+    this.camera = { x: 0, y: 0 };
+    this.stars = Array.from({ length: SKY_STARS }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      phase: Math.random(),
+    }));
     this.stats = {
       distance: 0,
       enemiesDefeated: 0,
@@ -704,10 +1207,24 @@ export class RoguelikeGame {
     this.input.onShoot(() => this.#handleShoot());
     this.input.onDash(() => this.#handleDash());
     this.input.onPause(() => this.toggleMenu());
+    this.input.onInteract(() => this.#handleInteract());
 
     this.upgradePool = [...UPGRADE_LIBRARY];
     this.achievements = new Set();
     this.goal = pick(GOALS);
+    this.currency = 0;
+    this.inventory = [];
+    this.journalEntries = [];
+    this.completedStoryBeats = new Set();
+    this.currentStory = STORY_BEATS[0];
+    this.houseProject = null;
+    this.currentDungeon = null;
+    this.dungeonTimer = 0;
+    this.activeShop = null;
+    this.nearbyShop = null;
+    this.nearbyNpc = null;
+    this.nearbyPlot = null;
+    this.lastZoneName = null;
   }
 
   start() {
@@ -733,6 +1250,24 @@ export class RoguelikeGame {
       upgrades: 0,
       timeAlive: 0,
     };
+    this.currency = 0;
+    this.inventory = [];
+    this.journalEntries = [];
+    this.completedStoryBeats = new Set();
+    this.currentStory = STORY_BEATS[0];
+    this.houseProject = {
+      label: 'Build Cozy Home',
+      progress: 0,
+      target: PLAYER_HOUSE_PROGRESS_TARGET,
+      completed: false,
+    };
+    this.currentDungeon = null;
+    this.dungeonTimer = 0;
+    this.activeShop = null;
+    this.nearbyShop = null;
+    this.nearbyNpc = null;
+    this.nearbyPlot = null;
+    this.timeOfDay = DAY_NIGHT_DURATION * 0.4;
 
     this.world = World.generate(
       Math.floor(this.canvas.width / TILE_SIZE) + WORLD_PADDING_TILES,
@@ -768,6 +1303,9 @@ export class RoguelikeGame {
       upgrades: [],
     };
 
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+
     this.projectiles = [];
     this.enemyProjectiles = [];
     this.enemies = [];
@@ -786,7 +1324,16 @@ export class RoguelikeGame {
     this.ui.setAchievements([]);
     this.ui.setGoal(this.goal);
     this.ui.setMapClues(this.world.mapClues);
-    this.log.push('You feel a calm wind guiding your steps.');
+    this.ui.setCurrency(this.currency);
+    this.ui.setInventory(this.inventory);
+    this.ui.setJournal(this.journalEntries);
+    this.ui.setStory(this.currentStory.text);
+    this.ui.setZone(this.world.getZoneName(this.player.x, this.player.y));
+    this.ui.setTimeOfDay(this.#describeTimeOfDay());
+    this.ui.setTownProgress(this.houseProject.label, 0);
+    this.ui.hideShop();
+    this.ui.clearPrompt();
+    this.log.push('Aurora Plaza hums with possibility. Press F to chat, trade, and build.');
   }
 
   handleResize() {
@@ -820,6 +1367,131 @@ export class RoguelikeGame {
     }
   }
 
+  openShop(shop) {
+    if (this.activeShop === shop) return;
+    this.activeShop = shop;
+    this.ui.showShop(
+      shop,
+      (item) => this.#purchaseShopItem(shop, item),
+      () => this.leaveShop()
+    );
+    this.log.push(`You browse the wares at ${shop.name}.`);
+  }
+
+  leaveShop() {
+    if (!this.activeShop) return;
+    this.activeShop = null;
+    this.ui.hideShop();
+    this.ui.clearPrompt();
+  }
+
+  #purchaseShopItem(shop, item) {
+    if (!this.activeShop || this.activeShop !== shop) return;
+    if (this.currency < item.cost) {
+      this.ui.showToast('Not enough glow shards. Explore dungeons for more.');
+      return;
+    }
+    this.currency -= item.cost;
+    this.ui.setCurrency(this.currency);
+    item.effect(this.player);
+    this.ui.setHealth(this.player.health, this.player.maxHealth);
+    this.ui.showToast(`Purchased ${item.label}!`);
+    this.log.push(`You purchase ${item.label} from ${shop.name}.`);
+  }
+
+  #handleInteract() {
+    if (this.state !== 'running') return;
+    if (this.activeShop) {
+      this.leaveShop();
+      return;
+    }
+
+    const shop = this.world.getShopNear(this.player.x, this.player.y);
+    if (shop) {
+      this.openShop(shop);
+      return;
+    }
+
+    const npc = this.world.getNpcNear(this.player.x, this.player.y);
+    if (npc) {
+      this.#talkToNpc(npc);
+      return;
+    }
+
+    const plot = this.world.getHousePlotNear(this.player.x, this.player.y);
+    if (plot) {
+      this.#progressHouse(plot);
+    }
+  }
+
+  #talkToNpc(npc) {
+    this.log.push(`${npc.name}: ${npc.line}`);
+    if (!this.journalEntries.find((entry) => entry.id === npc.id)) {
+      this.journalEntries.push({ id: npc.id, name: npc.name, note: npc.journal });
+      this.ui.setJournal(this.journalEntries);
+      this.ui.showToast(`${npc.name} shares guidance.`);
+      if (npc.id === 'mayor') {
+        this.#advanceStory('arrival');
+      }
+    }
+  }
+
+  #progressHouse(plot) {
+    if (this.houseProject?.completed) {
+      this.ui.showToast('Your home already gleams with lantern light.');
+      return;
+    }
+    const materialIndex = this.inventory.findIndex((item) =>
+      item.id === 'timber' || item.id === 'stone'
+    );
+    if (materialIndex === -1) {
+      this.ui.showToast('Bring timber or stone from a dungeon to keep building.');
+      return;
+    }
+    const item = this.inventory.splice(materialIndex, 1)[0];
+    const contribution = item.id === 'timber' ? 15 : 12;
+    this.houseProject.progress = clamp(
+      this.houseProject.progress + contribution,
+      0,
+      this.houseProject.target
+    );
+    plot.progress = this.houseProject.progress;
+    this.ui.setInventory(this.inventory);
+    this.ui.setTownProgress(
+      this.houseProject.label,
+      this.houseProject.progress / this.houseProject.target
+    );
+    this.ui.showToast(`Contributed materials toward your home (+${contribution}).`);
+    this.log.push('You add sturdy beams to your future home.');
+
+    if (this.houseProject.progress >= this.houseProject.target) {
+      this.houseProject.completed = true;
+      this.houseProject.label = 'Home Complete';
+      this.log.push('Your home stands finished, welcoming and warm.');
+      this.ui.showToast('Home completed!');
+      this.ui.setTownProgress('Home Complete', 1);
+      this.#advanceStory('house-finished');
+      // swap decoration to a finished house
+      const deco = this.world.decorations.find(
+        (entry) => entry.x === plot.x && entry.y === plot.y && entry.type === 'house-frame'
+      );
+      if (deco) deco.type = 'house';
+    }
+  }
+
+  #advanceStory(id) {
+    if (this.completedStoryBeats.has(id)) return;
+    this.completedStoryBeats.add(id);
+    const next = STORY_BEATS.find((beat) => !this.completedStoryBeats.has(beat.id));
+    if (next) {
+      this.currentStory = next;
+      this.ui.setStory(next.text);
+    } else {
+      this.currentStory = { id: 'free', text: 'Enjoy the valley. Help townsfolk and explore freely.' };
+      this.ui.setStory(this.currentStory.text);
+    }
+  }
+
   #loop(time) {
     const dt = Math.min(0.06, (time - this.lastTime) / 1000 || 0);
     this.lastTime = time;
@@ -834,16 +1506,33 @@ export class RoguelikeGame {
 
   #update(dt) {
     this.stats.timeAlive += dt;
+    this.timeOfDay = (this.timeOfDay + dt * 0.45) % DAY_NIGHT_DURATION;
+    this.#updateCamera(dt);
+    this.ui.setTimeOfDay(this.#describeTimeOfDay());
     const movement = this.input.getMovementVector();
     const aim = this.input.getAimVector(this.player.aim);
     this.player.aim = aim;
 
-    const speed = this.player.speed;
-    const targetVx = movement.x * speed;
-    const targetVy = movement.y * speed;
+    const desiredVx = movement.x * this.player.speed;
+    const desiredVy = movement.y * this.player.speed;
+    const acceleration = PLAYER_ACCELERATION * (this.player.spiritWalk ? 1.25 : 1);
+    const friction = PLAYER_FRICTION;
 
-    this.player.vx = lerp(this.player.vx, targetVx, this.player.spiritWalk ? 0.2 : 0.12);
-    this.player.vy = lerp(this.player.vy, targetVy, this.player.spiritWalk ? 0.2 : 0.12);
+    const applyAcceleration = (current, desired) => {
+      const delta = desired - current;
+      const step = acceleration * dt;
+      if (Math.abs(delta) <= step) return desired;
+      return current + Math.sign(delta) * step;
+    };
+
+    this.player.vx = applyAcceleration(this.player.vx, desiredVx);
+    this.player.vy = applyAcceleration(this.player.vy, desiredVy);
+
+    if (movement.x === 0 && movement.y === 0) {
+      const decay = clamp(friction * dt, 0, 1);
+      this.player.vx = lerp(this.player.vx, 0, decay);
+      this.player.vy = lerp(this.player.vy, 0, decay);
+    }
 
     const nextX = this.player.x + this.player.vx * dt;
     const nextY = this.player.y + this.player.vy * dt;
@@ -875,6 +1564,7 @@ export class RoguelikeGame {
       }
     }
 
+    this.#updateZoneState(dt);
     this.#updateProjectiles(dt);
     this.#updateEnemies(dt);
     this.#updateEnemyProjectiles(dt);
@@ -882,11 +1572,123 @@ export class RoguelikeGame {
     this.particles.update(dt);
     this.#checkAchievements();
 
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      this.#spawnEnemyWave();
-      this.spawnTimer = ENEMY_SPAWN_INTERVAL + randRange(-2, 2);
+    if (this.currentDungeon) {
+      this.spawnTimer -= dt;
+      this.dungeonTimer += dt;
+      if (this.spawnTimer <= 0) {
+        this.#spawnEnemyWave();
+        this.spawnTimer = ENEMY_SPAWN_INTERVAL + randRange(-2, 2);
+      }
+      if (
+        !this.currentDungeon.boss.spawned &&
+        !this.currentDungeon.boss.defeated &&
+        this.dungeonTimer > 25
+      ) {
+        this.#spawnBoss(this.currentDungeon);
+      }
+    } else {
+      this.spawnTimer = ENEMY_SPAWN_INTERVAL;
     }
+  }
+
+  #updateZoneState(dt) {
+    const zoneName = this.world.getZoneName(this.player.x, this.player.y);
+    if (zoneName !== this.lastZoneName) {
+      this.ui.setZone(zoneName);
+      this.lastZoneName = zoneName;
+    }
+
+    const shop = this.world.getShopNear(this.player.x, this.player.y);
+    const npc = this.world.getNpcNear(this.player.x, this.player.y);
+    const plot = this.world.getHousePlotNear(this.player.x, this.player.y);
+
+    if (
+      this.activeShop &&
+      Math.hypot(this.activeShop.x - this.player.x, this.activeShop.y - this.player.y) > 2.2
+    ) {
+      this.leaveShop();
+    }
+
+    this.nearbyShop = shop;
+    this.nearbyNpc = npc;
+    this.nearbyPlot = plot;
+
+    let prompt = '';
+    if (this.activeShop) {
+      prompt = 'Press F to leave the shop';
+    } else if (shop) {
+      prompt = `Press F to trade with ${shop.name}`;
+    } else if (plot && this.houseProject && !this.houseProject.completed) {
+      const hasMaterials = this.inventory.some(
+        (item) => item.id === 'timber' || item.id === 'stone'
+      );
+      prompt = hasMaterials
+        ? 'Press F to deliver building materials'
+        : 'Find timber or stone to keep building your home';
+    } else if (npc) {
+      prompt = `Press F to speak with ${npc.name}`;
+    }
+
+    if (prompt) {
+      this.ui.showPrompt(prompt);
+    } else {
+      this.ui.clearPrompt();
+    }
+
+    const inTown = this.world.isTown(this.player.x, this.player.y);
+    const inSanctuary = this.world.isSanctuary(this.player.x, this.player.y);
+    if ((inTown || inSanctuary) && this.player.health < this.player.maxHealth) {
+      const rate = inSanctuary ? 26 : 14;
+      this.player.health = clamp(this.player.health + rate * dt, 0, this.player.maxHealth);
+      this.ui.setHealth(this.player.health, this.player.maxHealth);
+    }
+
+    const dungeon = this.world.getDungeonAt(this.player.x, this.player.y);
+    if (dungeon !== this.currentDungeon) {
+      if (dungeon) {
+        this.currentDungeon = dungeon;
+        this.spawnTimer = 1.5;
+        this.dungeonTimer = 0;
+        if (!dungeon.visited) {
+          dungeon.visited = true;
+          this.log.push(`You descend into ${dungeon.name}.`);
+        } else {
+          this.log.push(`You return to ${dungeon.name}.`);
+        }
+        this.ui.showToast(`${dungeon.name} awakens!`);
+        this.#advanceStory('first-dungeon');
+      } else if (this.currentDungeon) {
+        this.log.push('You step back into the fresh valley air.');
+        this.currentDungeon = null;
+        this.enemies = [];
+        this.enemyProjectiles = [];
+        this.dungeonTimer = 0;
+        this.spawnTimer = ENEMY_SPAWN_INTERVAL;
+      }
+    }
+
+    if (!this.currentDungeon && (inTown || inSanctuary)) {
+      this.spawnTimer = ENEMY_SPAWN_INTERVAL;
+    }
+  }
+
+  #spawnBoss(dungeon) {
+    const spawn = pick(dungeon.spawnPoints);
+    const boss = {
+      x: spawn.x,
+      y: spawn.y,
+      health: BOSS_HEALTH,
+      color: pick(BOSS_PALETTE),
+      boss: true,
+      fireTimer: 0.8,
+      patternTimer: 0,
+      dungeon,
+    };
+    this.enemies.push(boss);
+    dungeon.boss.spawned = true;
+    dungeon.boss.defeated = false;
+    this.ui.showToast('A guardian emerges!');
+    this.log.push(`The guardian of ${dungeon.name} materializes.`);
   }
 
   #handleShoot() {
@@ -1071,12 +1873,22 @@ export class RoguelikeGame {
       const distance = Math.hypot(dx, dy);
       const slowed = this.#isInSlowField(enemy.x, enemy.y);
       const speedMultiplier = slowed ? 0.5 : 1;
+      const isBoss = enemy.boss === true;
 
       if (distance > 0.1) {
         const dir = normalize({ x: dx, y: dy });
-        const speed = ENEMY_BASE_SPEED * speedMultiplier;
-        const nextX = enemy.x + dir.x * speed * dt;
-        const nextY = enemy.y + dir.y * speed * dt;
+        const baseSpeed = (isBoss ? ENEMY_BASE_SPEED * 0.75 : ENEMY_BASE_SPEED) * speedMultiplier;
+        if (isBoss) {
+          enemy.patternTimer = (enemy.patternTimer || 0) + dt;
+          const sweepX = Math.cos(enemy.patternTimer * 1.4) * 0.5;
+          const sweepY = Math.sin(enemy.patternTimer * 1.2) * 0.35;
+          const swayX = enemy.x + sweepX * dt;
+          const swayY = enemy.y + sweepY * dt;
+          if (this.world.isWalkable(swayX, enemy.y)) enemy.x = swayX;
+          if (this.world.isWalkable(enemy.x, swayY)) enemy.y = swayY;
+        }
+        const nextX = enemy.x + dir.x * baseSpeed * dt;
+        const nextY = enemy.y + dir.y * baseSpeed * dt;
         if (this.world.isWalkable(nextX, enemy.y)) {
           enemy.x = nextX;
         }
@@ -1085,27 +1897,53 @@ export class RoguelikeGame {
         }
       }
 
-      if (distance < 1.2) {
-        this.#damagePlayer(ENEMY_CONTACT_DAMAGE * dt);
+      if (distance < (isBoss ? 1.5 : 1.2)) {
+        const damage = isBoss ? BOSS_CONTACT_DAMAGE : ENEMY_CONTACT_DAMAGE;
+        this.#damagePlayer(damage * dt);
       }
 
-      if (distance < ENEMY_RANGE && enemy.fireTimer <= 0) {
-        enemy.fireTimer = ENEMY_FIRE_INTERVAL + randRange(-0.6, 0.6);
-        const projectile = createProjectile({
-          x: enemy.x,
-          y: enemy.y,
-          direction: normalize({ x: dx, y: dy }),
-          speed: ENEMY_PROJECTILE_SPEED,
-          damage: ENEMY_PROJECTILE_DAMAGE,
-          lifetime: ENEMY_PROJECTILE_LIFETIME,
-          friendly: false,
-        });
-        this.enemyProjectiles.push(projectile);
-        this.particles.spawn({ x: enemy.x, y: enemy.y }, {
-          color: ENEMY_BULLET_COLOR,
-          radius: 0.18,
-          life: 0.45,
-        });
+      if (distance < (isBoss ? ENEMY_RANGE + 2 : ENEMY_RANGE) && enemy.fireTimer <= 0) {
+        if (isBoss) {
+          enemy.fireTimer = BOSS_FIRE_INTERVAL + randRange(-0.3, 0.3);
+          const baseAngle = Math.atan2(dy, dx);
+          const spreads = [-0.35, -0.1, 0.1, 0.35];
+          for (const offset of spreads) {
+            const angle = baseAngle + offset;
+            const projectile = {
+              x: enemy.x,
+              y: enemy.y,
+              vx: Math.cos(angle) * BOSS_PROJECTILE_SPEED,
+              vy: Math.sin(angle) * BOSS_PROJECTILE_SPEED,
+              damage: BOSS_PROJECTILE_DAMAGE,
+              lifetime: ENEMY_PROJECTILE_LIFETIME + 1,
+              age: 0,
+              friendly: false,
+            };
+            this.enemyProjectiles.push(projectile);
+          }
+          this.particles.spawn({ x: enemy.x, y: enemy.y }, {
+            color: ENEMY_BULLET_COLOR,
+            radius: 0.28,
+            life: 0.55,
+          });
+        } else {
+          enemy.fireTimer = ENEMY_FIRE_INTERVAL + randRange(-0.6, 0.6);
+          const projectile = createProjectile({
+            x: enemy.x,
+            y: enemy.y,
+            direction: normalize({ x: dx, y: dy }),
+            speed: ENEMY_PROJECTILE_SPEED,
+            damage: ENEMY_PROJECTILE_DAMAGE,
+            lifetime: ENEMY_PROJECTILE_LIFETIME,
+            friendly: false,
+          });
+          this.enemyProjectiles.push(projectile);
+          this.particles.spawn({ x: enemy.x, y: enemy.y }, {
+            color: ENEMY_BULLET_COLOR,
+            radius: 0.18,
+            life: 0.45,
+          });
+        }
       }
     }
 
@@ -1122,11 +1960,15 @@ export class RoguelikeGame {
       const dx = this.player.x - pickup.x;
       const dy = this.player.y - pickup.y;
       const distance = Math.hypot(dx, dy);
-      if (distance < 0.5) {
-        this.player.experience += pickup.value;
-        this.log.push('You collect a glowing memory shard.');
-        this.ui.showToast(`+${pickup.value} experience`);
-        this.#checkLevelUp();
+      if (distance < 0.6) {
+        if (pickup.kind === 'xp') {
+          this.player.experience += pickup.value;
+          this.log.push('You collect a glowing memory shard.');
+          this.ui.showToast(`+${pickup.value} experience`);
+          this.#checkLevelUp();
+        } else if (pickup.kind === 'loot' && pickup.item) {
+          this.#collectLoot(pickup.item);
+        }
         continue;
       }
 
@@ -1145,6 +1987,24 @@ export class RoguelikeGame {
       }
     }
     this.pickups = survivors;
+  }
+
+  #collectLoot(item) {
+    if (item.id === 'lumen-shard') {
+      this.currency += item.value;
+      this.ui.setCurrency(this.currency);
+      this.ui.showToast(`+${item.value} glow shards`);
+      this.log.push('You gather shimmering glow shards.');
+    } else {
+      this.inventory.push(item);
+      this.ui.setInventory(this.inventory);
+      this.ui.showToast(`${item.name} added to your satchel.`);
+      if (item.id === 'silk') {
+        this.log.push('The shimmering silk might delight the artisans in town.');
+      } else {
+        this.log.push(`You stash ${item.name} for later use.`);
+      }
+    }
   }
 
   #checkLevelUp() {
@@ -1208,16 +2068,52 @@ export class RoguelikeGame {
 
   #onEnemyDefeated(enemy) {
     this.stats.enemiesDefeated += 1;
-    this.log.push('A hostile shade dissolves into sparks.');
-    const xpValue = 12 + Math.round(Math.random() * 6);
+    if (enemy.boss) {
+      this.log.push('The guardian shatters into drifting light.');
+      this.ui.showToast('Boss defeated!');
+      this.#advanceStory('boss-victory');
+      if (enemy.dungeon?.boss) {
+        enemy.dungeon.boss.spawned = false;
+        enemy.dungeon.boss.defeated = true;
+      }
+    } else {
+      this.log.push('A hostile shade dissolves into sparks.');
+    }
+    const xpValue = (enemy.boss ? 40 : 12) + Math.round(Math.random() * (enemy.boss ? 20 : 6));
     this.pickups.push({
+      kind: 'xp',
       x: enemy.x,
       y: enemy.y,
       vx: randRange(-0.2, 0.2),
       vy: randRange(-0.2, 0.2),
       value: xpValue,
-      life: 12,
+      life: 14,
     });
+    if (enemy.boss) {
+      this.pickups.push({
+        kind: 'xp',
+        x: enemy.x + randRange(-0.5, 0.5),
+        y: enemy.y + randRange(-0.5, 0.5),
+        vx: randRange(-0.2, 0.2),
+        vy: randRange(-0.2, 0.2),
+        value: xpValue / 2,
+        life: 14,
+      });
+    }
+
+    const lootChance = enemy.boss ? 1 : 0.38;
+    if (Math.random() < lootChance) {
+      const loot = { ...pick(LOOT_TABLE) };
+      this.pickups.push({
+        kind: 'loot',
+        x: enemy.x + randRange(-0.4, 0.4),
+        y: enemy.y + randRange(-0.4, 0.4),
+        vx: randRange(-0.3, 0.3),
+        vy: randRange(-0.3, 0.3),
+        item: loot,
+        life: 16,
+      });
+    }
     this.particles.spawn({ x: enemy.x, y: enemy.y }, {
       color: '#fbbf24',
       radius: 0.3,
@@ -1250,24 +2146,25 @@ export class RoguelikeGame {
   }
 
   #spawnEnemyWave() {
-    if (this.enemies.length > 12) return;
-    const spawnCount = 2 + randInt(0, 2);
+    if (!this.currentDungeon) return;
+    if (this.enemies.length > 18) return;
+    const spawnCount = (this.currentDungeon.boss.spawned ? 2 : 3) + randInt(0, 1);
     for (let i = 0; i < spawnCount; i += 1) {
-      const source = this.world.enemySpawns.length
-        ? pick(this.world.enemySpawns)
-        : { x: this.world.spawnPoint.x + randRange(-4, 4), y: this.world.spawnPoint.y + randRange(6, 10) };
+      const source = pick(this.currentDungeon.spawnPoints);
       const enemy = {
-        x: source.x + randRange(-3, 3),
-        y: source.y + randRange(-3, 3),
-        health: ENEMY_BASE_HEALTH * randRange(0.8, 1.2),
+        x: source.x + randRange(-1.5, 1.5),
+        y: source.y + randRange(-1.5, 1.5),
+        health: ENEMY_BASE_HEALTH * randRange(0.9, 1.3),
         color: pick(ENEMY_PALETTE),
-        fireTimer: randRange(0.5, ENEMY_FIRE_INTERVAL),
+        fireTimer: randRange(0.4, ENEMY_FIRE_INTERVAL),
+        boss: false,
+        dungeon: this.currentDungeon,
       };
       if (this.world.isWalkable(enemy.x, enemy.y)) {
         this.enemies.push(enemy);
       }
     }
-    this.log.push('Shadows gather near the horizon...');
+    this.log.push(`Shadows gather within ${this.currentDungeon.name}.`);
   }
 
   #checkAchievements() {
@@ -1292,98 +2189,310 @@ export class RoguelikeGame {
   #render() {
     const ctx = this.context;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.#drawWorld(ctx);
-    this.#drawDecorations(ctx);
-    this.#drawSigns(ctx);
-    this.#drawPlayer(ctx);
-    this.#drawEnemies(ctx);
-    this.#drawProjectiles(ctx);
-    this.#drawPickups(ctx);
+    this.#drawSky(ctx);
+    const view = this.#getCameraView();
+    ctx.save();
+    ctx.translate(-view.offsetX * TILE_SIZE, -view.offsetY * TILE_SIZE);
+    this.#drawWorld(ctx, view);
+    this.#drawDecorations(ctx, view);
+    this.#drawNpcs(ctx, view);
+    this.#drawSigns(ctx, view);
+    this.#drawPlayer(ctx, view);
+    this.#drawEnemies(ctx, view);
+    this.#drawProjectiles(ctx, view);
+    this.#drawPickups(ctx, view);
     if (this.slowFields) {
       for (const field of this.slowFields) {
-        this.#drawSlowField(ctx, field);
+        this.#drawSlowField(ctx, field, view);
       }
     }
-    this.particles.draw(ctx);
+    this.particles.draw(ctx, view);
+    ctx.restore();
+    this.#drawAtmosphere(ctx, view);
   }
 
-  #drawWorld(ctx) {
+  #getCameraView() {
     const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
     const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+    const offsetX = this.camera.x - viewWidth / 2;
+    const offsetY = this.camera.y - viewHeight / 2;
+    return {
+      viewWidth,
+      viewHeight,
+      offsetX,
+      offsetY,
+    };
+  }
 
-    for (let y = 0; y <= viewHeight; y += 1) {
-      for (let x = 0; x <= viewWidth; x += 1) {
-        const worldX = x + offsetX;
-        const worldY = y + offsetY;
-        const tile = this.world.getTile(worldX, worldY);
+  #drawSky(ctx) {
+    const t = (this.timeOfDay % DAY_NIGHT_DURATION) / DAY_NIGHT_DURATION;
+    const light = this.#getLightLevel();
+    const top = mixColor('#020617', '#0ea5e9', light);
+    const mid = mixColor('#111827', '#38bdf8', light);
+    const horizon = mixColor('#1f2937', '#fcd34d', Math.pow(light, 0.6));
+    const gradient = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+    gradient.addColorStop(0, top);
+    gradient.addColorStop(0.45, mid);
+    gradient.addColorStop(1, horizon);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    if (light < 0.55) {
+      ctx.save();
+      ctx.globalAlpha = clamp((0.55 - light) * 1.6, 0, 0.85);
+      ctx.fillStyle = '#f8fafc';
+      for (const star of this.stars) {
+        const twinkle = (Math.sin((t + star.phase) * Math.PI * 2) + 1) / 2;
+        const alpha = clamp(0.35 + twinkle * 0.65, 0, 1);
+        ctx.globalAlpha = alpha * clamp((0.55 - light) * 1.2, 0, 1);
+        const x = star.x * this.canvas.width;
+        const y = star.y * this.canvas.height * 0.6;
+        ctx.fillRect(x, y, 2, 2);
+      }
+      ctx.restore();
+    }
+  }
+
+  #drawAtmosphere(ctx, view) {
+    const light = this.#getLightLevel();
+    if (light < 0.6) {
+      ctx.fillStyle = `rgba(15, 23, 42, ${0.25 * (0.6 - light)})`;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    const glow = ctx.createRadialGradient(
+      this.canvas.width / 2,
+      this.canvas.height / 2,
+      Math.min(this.canvas.width, this.canvas.height) * 0.1,
+      this.canvas.width / 2,
+      this.canvas.height / 2,
+      Math.max(this.canvas.width, this.canvas.height) * 0.75
+    );
+    glow.addColorStop(0, `rgba(251, 191, 36, ${0.05 + light * 0.08})`);
+    glow.addColorStop(1, 'rgba(15, 23, 42, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  #updateCamera(dt) {
+    const smoothing = 1 - Math.exp(-dt * 6);
+    this.camera.x = lerp(this.camera.x, this.player.x, smoothing);
+    this.camera.y = lerp(this.camera.y, this.player.y, smoothing);
+  }
+
+  #getLightLevel() {
+    const t = (this.timeOfDay % DAY_NIGHT_DURATION) / DAY_NIGHT_DURATION;
+    return (Math.sin(t * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+  }
+
+  #describeTimeOfDay() {
+    const t = (this.timeOfDay % DAY_NIGHT_DURATION) / DAY_NIGHT_DURATION;
+    if (t < 0.18 || t >= 0.92) return 'Starlit Night';
+    if (t < 0.3) return 'Aurora Dawn';
+    if (t < 0.52) return 'Golden Noon';
+    if (t < 0.7) return 'Amber Afternoon';
+    if (t < 0.85) return 'Rose Dusk';
+    return 'Violet Evening';
+  }
+
+  #drawWorld(ctx, view) {
+    const shimmer = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    const light = this.#getLightLevel();
+    const startX = Math.max(0, Math.floor(view.offsetX) - 2);
+    const endX = Math.min(this.world.width - 1, Math.ceil(view.offsetX + view.viewWidth) + 2);
+    const startY = Math.max(0, Math.floor(view.offsetY) - 2);
+    const endY = Math.min(this.world.height - 1, Math.ceil(view.offsetY + view.viewHeight) + 2);
+
+    for (let y = startY; y <= endY; y += 1) {
+      for (let x = startX; x <= endX; x += 1) {
+        const tile = this.world.getTile(x, y);
         const info = TILE_TYPES[tile.type];
         const color = info?.variants?.[tile.variant] ?? info?.color ?? '#000';
+        const screenX = x * TILE_SIZE;
+        const screenY = y * TILE_SIZE;
         ctx.fillStyle = color;
-        ctx.fillRect(
-          x * TILE_SIZE,
-          y * TILE_SIZE,
-          TILE_SIZE + 1,
-          TILE_SIZE + 1
-        );
+        ctx.fillRect(screenX, screenY, TILE_SIZE + 1, TILE_SIZE + 1);
+
+        if (tile.type === 'water') {
+          const wave = Math.sin(shimmer * 1.4 + x * 0.7 + y * 0.4);
+          const highlight = clamp((wave + 1) / 2, 0, 1);
+          const gradient = ctx.createLinearGradient(
+            screenX,
+            screenY,
+            screenX,
+            screenY + TILE_SIZE
+          );
+          gradient.addColorStop(0, `rgba(59, 130, 246, ${0.25 + highlight * 0.2})`);
+          gradient.addColorStop(1, `rgba(14, 165, 233, ${0.18 + highlight * 0.15})`);
+          ctx.fillStyle = gradient;
+          ctx.fillRect(screenX, screenY, TILE_SIZE + 1, TILE_SIZE + 1);
+        } else if (tile.type === 'sanctuary') {
+          ctx.fillStyle = 'rgba(96, 165, 250, 0.18)';
+          ctx.fillRect(screenX, screenY, TILE_SIZE + 1, TILE_SIZE + 1);
+        } else if (tile.type === 'farmland') {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(245, 158, 11, 0.38)';
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(screenX + 2, screenY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          ctx.restore();
+        }
+
+        const distance = Math.hypot(x - this.player.x, y - this.player.y);
+        const glow = clamp(1 - distance / 24, 0, 1) * (0.14 + light * 0.08);
+        if (glow > 0) {
+          ctx.fillStyle = `rgba(248, 250, 252, ${glow})`;
+          ctx.fillRect(screenX, screenY, TILE_SIZE + 1, TILE_SIZE + 1);
+        }
+
+        const duskShade = clamp(0.45 - light * 0.35, 0, 0.45);
+        if (duskShade > 0) {
+          ctx.fillStyle = `rgba(15, 23, 42, ${duskShade})`;
+          ctx.fillRect(screenX, screenY, TILE_SIZE + 1, TILE_SIZE + 1);
+        } else if (light > 0.6) {
+          const sunKiss = (light - 0.6) * 0.18;
+          if (sunKiss > 0) {
+            ctx.fillStyle = `rgba(253, 224, 71, ${sunKiss})`;
+            ctx.fillRect(screenX, screenY, TILE_SIZE + 1, TILE_SIZE + 1);
+          }
+        }
       }
     }
   }
 
-  #drawDecorations(ctx) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
-
+  #drawDecorations(ctx, view) {
     for (const deco of this.world.decorations) {
-      const screenX = (deco.x - offsetX) * TILE_SIZE;
-      const screenY = (deco.y - offsetY) * TILE_SIZE;
-      if (screenX < -TILE_SIZE || screenY < -TILE_SIZE) continue;
-      if (screenX > this.canvas.width || screenY > this.canvas.height) continue;
+      if (
+        deco.x < view.offsetX - 2 ||
+        deco.x > view.offsetX + view.viewWidth + 2 ||
+        deco.y < view.offsetY - 2 ||
+        deco.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = deco.x * TILE_SIZE;
+      const screenY = deco.y * TILE_SIZE;
       if (deco.type === 'tree') {
         ctx.fillStyle = SCENERY_COLORS.treeTrunk;
-        ctx.fillRect(screenX + TILE_SIZE * 0.45, screenY + TILE_SIZE * 0.5, TILE_SIZE * 0.1, TILE_SIZE * 0.5);
-        ctx.fillStyle = pick(SCENERY_COLORS.treeLeaves);
+        ctx.fillRect(screenX + TILE_SIZE * 0.45, screenY + TILE_SIZE * 0.52, TILE_SIZE * 0.1, TILE_SIZE * 0.48);
+        const leafGradient = ctx.createRadialGradient(
+          screenX + TILE_SIZE / 2,
+          screenY + TILE_SIZE * 0.36,
+          TILE_SIZE * 0.05,
+          screenX + TILE_SIZE / 2,
+          screenY + TILE_SIZE * 0.36,
+          TILE_SIZE * 0.48
+        );
+        const leafColor = deco.color ?? SCENERY_COLORS.treeLeaves[0];
+        leafGradient.addColorStop(0, 'rgba(248, 250, 252, 0.16)');
+        leafGradient.addColorStop(1, leafColor);
+        ctx.fillStyle = leafGradient;
         ctx.beginPath();
-        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE * 0.35, TILE_SIZE * 0.45, 0, Math.PI * 2);
+        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE * 0.36, TILE_SIZE * 0.48, 0, Math.PI * 2);
         ctx.fill();
       } else if (deco.type === 'blossom') {
-        ctx.fillStyle = SCENERY_COLORS.blossom;
+        ctx.fillStyle = deco.color ?? SCENERY_COLORS.blossom;
         ctx.beginPath();
-        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE * 0.3, TILE_SIZE * 0.2, 0, Math.PI * 2);
+        ctx.arc(screenX + TILE_SIZE / 2, screenY + TILE_SIZE * 0.3, TILE_SIZE * 0.22, 0, Math.PI * 2);
         ctx.fill();
       } else if (deco.type === 'rock') {
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = deco.color ?? '#94a3b8';
         ctx.beginPath();
         ctx.ellipse(
           screenX + TILE_SIZE / 2,
           screenY + TILE_SIZE * 0.7,
-          TILE_SIZE * 0.35,
-          TILE_SIZE * 0.25,
+          TILE_SIZE * 0.36,
+          TILE_SIZE * 0.26,
           0,
           0,
           Math.PI * 2
         );
         ctx.fill();
+      } else if (deco.type === 'house-frame') {
+        ctx.strokeStyle = 'rgba(248, 250, 252, 0.45)';
+        ctx.lineWidth = 2.2;
+        ctx.strokeRect(screenX + TILE_SIZE * 0.15, screenY + TILE_SIZE * 0.35, TILE_SIZE * 0.7, TILE_SIZE * 0.58);
+        ctx.strokeStyle = 'rgba(248, 250, 252, 0.25)';
+        ctx.beginPath();
+        ctx.moveTo(screenX + TILE_SIZE * 0.15, screenY + TILE_SIZE * 0.35);
+        ctx.lineTo(screenX + TILE_SIZE * 0.5, screenY + TILE_SIZE * 0.1);
+        ctx.lineTo(screenX + TILE_SIZE * 0.85, screenY + TILE_SIZE * 0.35);
+        ctx.stroke();
+      } else if (deco.type === 'market') {
+        ctx.fillStyle = SCENERY_COLORS.marketStall;
+        ctx.fillRect(screenX + TILE_SIZE * 0.15, screenY + TILE_SIZE * 0.42, TILE_SIZE * 0.7, TILE_SIZE * 0.38);
+        const stripes = [0, 0.33, 0.66];
+        ctx.fillStyle = 'rgba(15, 118, 110, 0.65)';
+        for (const stripe of stripes) {
+          ctx.fillRect(
+            screenX + TILE_SIZE * (0.15 + stripe * 0.7),
+            screenY + TILE_SIZE * 0.3,
+            TILE_SIZE * 0.23,
+            TILE_SIZE * 0.14
+          );
+        }
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(screenX + TILE_SIZE * 0.2, screenY + TILE_SIZE * 0.57, TILE_SIZE * 0.12, TILE_SIZE * 0.28);
+        ctx.fillRect(screenX + TILE_SIZE * 0.68, screenY + TILE_SIZE * 0.57, TILE_SIZE * 0.12, TILE_SIZE * 0.28);
       } else if (deco.type === 'house') {
         ctx.fillStyle = SCENERY_COLORS.houseWall;
-        ctx.fillRect(screenX + TILE_SIZE * 0.1, screenY + TILE_SIZE * 0.3, TILE_SIZE * 0.8, TILE_SIZE * 0.6);
-        ctx.fillStyle = SCENERY_COLORS.houseRoof;
+        ctx.fillRect(screenX + TILE_SIZE * 0.1, screenY + TILE_SIZE * 0.3, TILE_SIZE * 0.8, TILE_SIZE * 0.62);
+        const roofGradient = ctx.createLinearGradient(
+          screenX + TILE_SIZE * 0.05,
+          screenY + TILE_SIZE * 0.1,
+          screenX + TILE_SIZE * 0.95,
+          screenY + TILE_SIZE * 0.35
+        );
+        roofGradient.addColorStop(0, '#d8b4fe');
+        roofGradient.addColorStop(1, SCENERY_COLORS.houseRoof);
+        ctx.fillStyle = roofGradient;
         ctx.beginPath();
         ctx.moveTo(screenX + TILE_SIZE * 0.05, screenY + TILE_SIZE * 0.35);
         ctx.lineTo(screenX + TILE_SIZE * 0.5, screenY + TILE_SIZE * 0.05);
         ctx.lineTo(screenX + TILE_SIZE * 0.95, screenY + TILE_SIZE * 0.35);
         ctx.closePath();
         ctx.fill();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.fillRect(screenX + TILE_SIZE * 0.4, screenY + TILE_SIZE * 0.55, TILE_SIZE * 0.2, TILE_SIZE * 0.35);
+        ctx.fillStyle = 'rgba(252, 211, 77, 0.88)';
+        ctx.fillRect(screenX + TILE_SIZE * 0.22, screenY + TILE_SIZE * 0.5, TILE_SIZE * 0.16, TILE_SIZE * 0.16);
+        ctx.fillRect(screenX + TILE_SIZE * 0.62, screenY + TILE_SIZE * 0.5, TILE_SIZE * 0.16, TILE_SIZE * 0.16);
+      } else if (deco.type === 'crop') {
+        ctx.fillStyle = SCENERY_COLORS.farmCrop;
+        ctx.beginPath();
+        ctx.ellipse(
+          screenX + TILE_SIZE * 0.5,
+          screenY + TILE_SIZE * 0.7,
+          TILE_SIZE * 0.25,
+          TILE_SIZE * 0.18,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      } else if (deco.type === 'campfire') {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.5)';
+        ctx.beginPath();
+        ctx.arc(screenX + TILE_SIZE * 0.5, screenY + TILE_SIZE * 0.5, TILE_SIZE * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.arc(screenX + TILE_SIZE * 0.5, screenY + TILE_SIZE * 0.55, TILE_SIZE * 0.15, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
     for (const lamp of this.world.lamps) {
-      const screenX = (lamp.x - offsetX) * TILE_SIZE;
-      const screenY = (lamp.y - offsetY) * TILE_SIZE;
-      ctx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+      if (
+        lamp.x < view.offsetX - 2 ||
+        lamp.x > view.offsetX + view.viewWidth + 2 ||
+        lamp.y < view.offsetY - 2 ||
+        lamp.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = lamp.x * TILE_SIZE;
+      const screenY = lamp.y * TILE_SIZE;
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.35)';
       ctx.beginPath();
       ctx.arc(screenX, screenY, TILE_SIZE * 0.8, 0, Math.PI * 2);
       ctx.fill();
@@ -1394,22 +2503,46 @@ export class RoguelikeGame {
     }
   }
 
-  #drawSigns(ctx) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
+  #drawNpcs(ctx, view) {
+    for (const npc of this.world.npcs) {
+      if (
+        npc.x < view.offsetX - 2 ||
+        npc.x > view.offsetX + view.viewWidth + 2 ||
+        npc.y < view.offsetY - 2 ||
+        npc.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = npc.x * TILE_SIZE;
+      const screenY = npc.y * TILE_SIZE;
+      ctx.fillStyle = npc.color ?? '#38bdf8';
+      ctx.beginPath();
+      ctx.ellipse(screenX, screenY, TILE_SIZE * 0.24, TILE_SIZE * 0.32, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY - TILE_SIZE * 0.18, TILE_SIZE * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
+  #drawSigns(ctx, view) {
     ctx.fillStyle = '#f8fafc';
     ctx.font = `${Math.floor(TILE_SIZE * 0.35)}px 'Trebuchet MS', sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
 
     for (const sign of this.world.signs) {
-      const screenX = (sign.x - offsetX) * TILE_SIZE;
-      const screenY = (sign.y - offsetY) * TILE_SIZE;
-      if (screenX < -TILE_SIZE || screenY < -TILE_SIZE) continue;
-      if (screenX > this.canvas.width + TILE_SIZE || screenY > this.canvas.height + TILE_SIZE) continue;
+      if (
+        sign.x < view.offsetX - 2 ||
+        sign.x > view.offsetX + view.viewWidth + 2 ||
+        sign.y < view.offsetY - 2 ||
+        sign.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = sign.x * TILE_SIZE;
+      const screenY = sign.y * TILE_SIZE;
       ctx.fillStyle = '#e2e8f0';
       ctx.fillRect(
         screenX - TILE_SIZE * 0.3,
@@ -1429,89 +2562,111 @@ export class RoguelikeGame {
     }
   }
 
-  #drawPlayer(ctx) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
-    const screenX = (this.player.x - offsetX) * TILE_SIZE;
-    const screenY = (this.player.y - offsetY) * TILE_SIZE;
+  #drawPlayer(ctx, view) {
+    const screenX = this.player.x * TILE_SIZE;
+    const screenY = this.player.y * TILE_SIZE;
+    const light = this.#getLightLevel();
 
-    ctx.fillStyle = '#fde68a';
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    const gradient = ctx.createRadialGradient(0, 0, TILE_SIZE * 0.08, 0, 0, TILE_SIZE * 0.46);
+    gradient.addColorStop(0, '#fefce8');
+    gradient.addColorStop(0.55, '#fde68a');
+    gradient.addColorStop(1, mixColor('#f59e0b', '#fbbf24', light));
+    ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.arc(screenX, screenY, TILE_SIZE * 0.35, 0, Math.PI * 2);
+    ctx.arc(0, 0, TILE_SIZE * 0.38, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#f97316';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, TILE_SIZE * 0.4, 0, Math.PI * 2);
-    ctx.stroke();
+    const velocityGlow = clamp(Math.hypot(this.player.vx, this.player.vy) / (PLAYER_SPRINT_SPEED * 1.2), 0, 1);
+    if (velocityGlow > 0) {
+      ctx.fillStyle = `rgba(252, 211, 77, ${0.18 + 0.25 * velocityGlow})`;
+      ctx.beginPath();
+      ctx.ellipse(
+        -this.player.vx * TILE_SIZE * 0.08,
+        -this.player.vy * TILE_SIZE * 0.08,
+        TILE_SIZE * 0.48,
+        TILE_SIZE * 0.3,
+        Math.atan2(this.player.vy, this.player.vx),
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
 
-    const aimX = screenX + this.player.aim.x * TILE_SIZE * 0.5;
-    const aimY = screenY + this.player.aim.y * TILE_SIZE * 0.5;
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
-    ctx.lineWidth = 2;
+    ctx.fillStyle = '#1e293b';
     ctx.beginPath();
-    ctx.moveTo(screenX, screenY);
-    ctx.lineTo(aimX, aimY);
-    ctx.stroke();
+    ctx.arc(0, -TILE_SIZE * 0.14, TILE_SIZE * 0.08, 0, Math.PI * 2);
+    ctx.fill();
 
     if (this.player.shield?.active) {
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(190, 242, 100, 0.75)';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(screenX, screenY, TILE_SIZE * 0.5, 0, Math.PI * 2);
+      ctx.arc(0, 0, TILE_SIZE * 0.48, 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    ctx.restore();
   }
 
-  #drawEnemies(ctx) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
-
+  #drawEnemies(ctx, view) {
     ctx.lineWidth = 2;
     for (const enemy of this.enemies) {
-      const screenX = (enemy.x - offsetX) * TILE_SIZE;
-      const screenY = (enemy.y - offsetY) * TILE_SIZE;
+      if (
+        enemy.x < view.offsetX - 3 ||
+        enemy.x > view.offsetX + view.viewWidth + 3 ||
+        enemy.y < view.offsetY - 3 ||
+        enemy.y > view.offsetY + view.viewHeight + 3
+      ) {
+        continue;
+      }
+      const screenX = enemy.x * TILE_SIZE;
+      const screenY = enemy.y * TILE_SIZE;
+      const isBoss = enemy.boss === true;
+      const radius = TILE_SIZE * (isBoss ? 0.45 : 0.32);
+      if (isBoss) {
+        const aura = ctx.createRadialGradient(screenX, screenY, TILE_SIZE * 0.2, screenX, screenY, TILE_SIZE * 0.75);
+        aura.addColorStop(0, 'rgba(88, 28, 135, 0.35)');
+        aura.addColorStop(1, 'rgba(15, 23, 42, 0)');
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, TILE_SIZE * 0.72, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.fillStyle = enemy.color;
       ctx.beginPath();
-      ctx.arc(screenX, screenY, TILE_SIZE * 0.32, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(248, 250, 252, 0.35)';
+      ctx.strokeStyle = isBoss ? 'rgba(250, 204, 21, 0.55)' : 'rgba(248, 250, 252, 0.35)';
+      ctx.lineWidth = isBoss ? 3 : 2;
       ctx.beginPath();
-      ctx.arc(screenX, screenY, TILE_SIZE * 0.36, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, radius + TILE_SIZE * 0.04, 0, Math.PI * 2);
       ctx.stroke();
 
-      const ratio = clamp(enemy.health / ENEMY_BASE_HEALTH, 0, 1);
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
-      ctx.fillRect(
-        screenX - TILE_SIZE * 0.3,
-        screenY - TILE_SIZE * 0.5,
-        TILE_SIZE * 0.6,
-        TILE_SIZE * 0.12
-      );
-      ctx.fillStyle = '#fbbf24';
-      ctx.fillRect(
-        screenX - TILE_SIZE * 0.3,
-        screenY - TILE_SIZE * 0.5,
-        TILE_SIZE * 0.6 * ratio,
-        TILE_SIZE * 0.12
-      );
+      const maxHealth = isBoss ? BOSS_HEALTH : ENEMY_BASE_HEALTH;
+      const ratio = clamp(enemy.health / maxHealth, 0, 1);
+      const barWidth = TILE_SIZE * (isBoss ? 0.9 : 0.6);
+      const barHeight = TILE_SIZE * 0.12;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+      ctx.fillRect(screenX - barWidth / 2, screenY - TILE_SIZE * 0.55, barWidth, barHeight);
+      ctx.fillStyle = isBoss ? 'rgba(250, 204, 21, 0.9)' : 'rgba(251, 191, 36, 0.8)';
+      ctx.fillRect(screenX - barWidth / 2, screenY - TILE_SIZE * 0.55, barWidth * ratio, barHeight);
     }
   }
 
-  #drawProjectiles(ctx) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
-
+  #drawProjectiles(ctx, view) {
     for (const projectile of this.projectiles) {
-      const screenX = (projectile.x - offsetX) * TILE_SIZE;
-      const screenY = (projectile.y - offsetY) * TILE_SIZE;
+      if (
+        projectile.x < view.offsetX - 2 ||
+        projectile.x > view.offsetX + view.viewWidth + 2 ||
+        projectile.y < view.offsetY - 2 ||
+        projectile.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = projectile.x * TILE_SIZE;
+      const screenY = projectile.y * TILE_SIZE;
       ctx.fillStyle = BULLET_COLOR;
       ctx.beginPath();
       ctx.arc(screenX, screenY, TILE_SIZE * 0.15, 0, Math.PI * 2);
@@ -1519,8 +2674,16 @@ export class RoguelikeGame {
     }
 
     for (const projectile of this.enemyProjectiles) {
-      const screenX = (projectile.x - offsetX) * TILE_SIZE;
-      const screenY = (projectile.y - offsetY) * TILE_SIZE;
+      if (
+        projectile.x < view.offsetX - 2 ||
+        projectile.x > view.offsetX + view.viewWidth + 2 ||
+        projectile.y < view.offsetY - 2 ||
+        projectile.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = projectile.x * TILE_SIZE;
+      const screenY = projectile.y * TILE_SIZE;
       ctx.fillStyle = ENEMY_BULLET_COLOR;
       ctx.beginPath();
       ctx.arc(screenX, screenY, TILE_SIZE * 0.12, 0, Math.PI * 2);
@@ -1528,29 +2691,40 @@ export class RoguelikeGame {
     }
   }
 
-  #drawPickups(ctx) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
-
+  #drawPickups(ctx, view) {
     for (const pickup of this.pickups) {
-      const screenX = (pickup.x - offsetX) * TILE_SIZE;
-      const screenY = (pickup.y - offsetY) * TILE_SIZE;
-      ctx.fillStyle = 'rgba(251, 191, 36, 0.8)';
+      if (
+        pickup.x < view.offsetX - 2 ||
+        pickup.x > view.offsetX + view.viewWidth + 2 ||
+        pickup.y < view.offsetY - 2 ||
+        pickup.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = pickup.x * TILE_SIZE;
+      const screenY = pickup.y * TILE_SIZE;
+      if (pickup.kind === 'loot') {
+        ctx.fillStyle = 'rgba(129, 140, 248, 0.85)';
+      } else {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.8)';
+      }
       ctx.beginPath();
       ctx.arc(screenX, screenY, TILE_SIZE * 0.18, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  #drawSlowField(ctx, field) {
-    const viewWidth = Math.ceil(this.canvas.width / TILE_SIZE);
-    const viewHeight = Math.ceil(this.canvas.height / TILE_SIZE);
-    const offsetX = Math.floor(this.player.x - viewWidth / 2);
-    const offsetY = Math.floor(this.player.y - viewHeight / 2);
-    const screenX = (field.x - offsetX) * TILE_SIZE;
-    const screenY = (field.y - offsetY) * TILE_SIZE;
+  #drawSlowField(ctx, field, view) {
+    if (
+      field.x < view.offsetX - 3 ||
+      field.x > view.offsetX + view.viewWidth + 3 ||
+      field.y < view.offsetY - 3 ||
+      field.y > view.offsetY + view.viewHeight + 3
+    ) {
+      return;
+    }
+    const screenX = field.x * TILE_SIZE;
+    const screenY = field.y * TILE_SIZE;
     const alpha = clamp(1 - field.age / field.duration, 0, 1) * 0.4;
     ctx.fillStyle = `rgba(96, 165, 250, ${alpha})`;
     ctx.beginPath();
