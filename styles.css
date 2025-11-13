@@ -233,8 +233,35 @@ canvas#game {
   line-height: 1.2;
 }
 
+.list li p {
+  margin: 0.3rem 0 0;
+}
+
 .list li strong {
   color: var(--text);
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.item-tag {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.18);
+  color: var(--accent);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.item-note {
+  font-size: 0.75rem;
+  color: rgba(129, 199, 212, 0.95);
 }
 
 .storyline {
@@ -263,6 +290,27 @@ canvas#game {
 .overlay[aria-hidden='false'] {
   opacity: 1;
   pointer-events: auto;
+}
+
+.overlay--start .overlay-card {
+  width: min(92vw, 32rem);
+  text-align: left;
+  gap: 1.25rem;
+}
+
+.overlay--start h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.overlay--start p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.overlay--start .overlay-actions {
+  justify-content: flex-start;
 }
 
 .overlay-card {

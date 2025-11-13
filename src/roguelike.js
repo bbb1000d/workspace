@@ -15,6 +15,8 @@ const AIM_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const MOVE_KEYS = new Set(['w', 'a', 's', 'd']);
 
 const WORLD_PADDING_TILES = 12;
+const MIN_WORLD_WIDTH_TILES = 120;
+const MIN_WORLD_HEIGHT_TILES = 120;
 const PLAYER_BASE_SPEED = 3.4; // tiles per second
 const PLAYER_SPRINT_SPEED = 6.2;
 const PLAYER_ACCELERATION = 14;
@@ -88,12 +90,135 @@ const ENEMY_BULLET_COLOR = '#38bdf8';
 
 const BOSS_PALETTE = ['#f97316', '#a855f7', '#38bdf8'];
 
-const LOOT_TABLE = [
-  { id: 'lumen-shard', name: 'Lumen Shard', description: 'Currency of the valley.', value: 6 },
-  { id: 'timber', name: 'Bundle of Timber', description: 'Useful for rebuilding town structures.', value: 10 },
-  { id: 'stone', name: 'Polished Stone', description: 'Perfect for sturdy foundations.', value: 8 },
-  { id: 'silk', name: 'Shimmering Silk', description: 'NPCs love receiving this rare cloth.', value: 14 },
-];
+const GOLD_RANGES = {
+  mob: [6, 14],
+  boss: [55, 90],
+  chestTown: [14, 26],
+  chestDungeon: [24, 46],
+  chestCapital: [36, 64],
+};
+
+const ITEM_LIBRARY = {
+  timber: {
+    id: 'timber',
+    name: 'Bundle of Timber',
+    description: 'Useful for rebuilding town structures.',
+    type: 'material',
+    value: 12,
+  },
+  stone: {
+    id: 'stone',
+    name: 'Polished Stone',
+    description: 'Perfect for sturdy foundations.',
+    type: 'material',
+    value: 10,
+  },
+  silk: {
+    id: 'silk',
+    name: 'Shimmering Silk',
+    description: 'NPCs love receiving this rare cloth.',
+    type: 'material',
+    value: 18,
+  },
+  'sun-elixir': {
+    id: 'sun-elixir',
+    name: 'Sun Elixir',
+    description: 'Instantly restores 40 health when collected.',
+    type: 'consumable',
+    heal: 40,
+    consumedOnPickup: true,
+  },
+  'moondrop-elixir': {
+    id: 'moondrop-elixir',
+    name: 'Moondrop Elixir',
+    description: 'A rare tonic that restores 70 health and sharpens your focus.',
+    type: 'consumable',
+    heal: 70,
+    onAcquire: (player) => {
+      player.dashCooldown *= 0.9;
+    },
+    consumedOnPickup: true,
+  },
+  'ember-blade': {
+    id: 'ember-blade',
+    name: 'Ember Blade',
+    description: 'A blazing weapon that increases your damage output.',
+    type: 'weapon',
+    onAcquire: (player) => {
+      player.damage += 6;
+    },
+  },
+  'aurora-lance': {
+    id: 'aurora-lance',
+    name: 'Aurora Lance',
+    description: 'Arrows pierce one additional foe after striking.',
+    type: 'weapon',
+    onAcquire: (player) => {
+      player.piercingShots = true;
+    },
+  },
+  dawnshield: {
+    id: 'dawnshield',
+    name: 'Dawnshield Bulwark',
+    description: 'Reinforces your health and quickens your protective barrier.',
+    type: 'shield',
+    onAcquire: (player) => {
+      if (!player.shield) {
+        player.shield = { cooldown: 18, timer: 18, active: true };
+      } else {
+        player.shield.cooldown = Math.max(12, player.shield.cooldown * 0.8);
+        player.shield.timer = player.shield.cooldown;
+        player.shield.active = true;
+      }
+      player.maxHealth += 25;
+      player.health = Math.min(player.maxHealth, player.health + 25);
+    },
+  },
+  'gale-cloak': {
+    id: 'gale-cloak',
+    name: 'Gale Cloak',
+    description: 'Light armour that boosts movement speed and dash distance.',
+    type: 'armor',
+    onAcquire: (player) => {
+      player.speed *= 1.1;
+      player.dashDistance += 1;
+    },
+  },
+  'ember-medal': {
+    id: 'ember-medal',
+    name: 'Ember Medal',
+    description: 'Valley traders will buy this medal for 45 gold.',
+    type: 'medal',
+    goldValue: 45,
+    consumedOnPickup: true,
+  },
+  'star-medal': {
+    id: 'star-medal',
+    name: 'Starforged Medal',
+    description: 'A radiant medal worth a hefty 75 gold.',
+    type: 'medal',
+    goldValue: 75,
+    consumedOnPickup: true,
+  },
+};
+
+const RESOURCE_DROPS = ['timber', 'stone', 'silk'];
+
+const CHEST_LOOT_TABLES = {
+  town: ['timber', 'stone', 'sun-elixir', 'gale-cloak', 'ember-medal'],
+  dungeon: [
+    'ember-blade',
+    'gale-cloak',
+    'dawnshield',
+    'aurora-lance',
+    'sun-elixir',
+    'moondrop-elixir',
+    'star-medal',
+  ],
+  capital: ['ember-blade', 'dawnshield', 'aurora-lance', 'gale-cloak', 'moondrop-elixir', 'star-medal'],
+};
+
+const BOSS_LOOT_TABLE = ['ember-blade', 'dawnshield', 'aurora-lance', 'gale-cloak', 'star-medal'];
 
 const SHOP_LIBRARY = [
   {
@@ -183,12 +308,24 @@ const NPC_LIBRARY = [
     line: 'Bring timber and stone and we will raise walls that shimmer like dawn.',
     journal: 'Mila will help finish my house once I supply more materials.',
   },
+  {
+    id: 'sage',
+    name: 'Sage Miren',
+    line: 'Every plaza whispers clues about hidden keeps. Listen closely.',
+    journal: 'Miren urged me to visit each town before braving the deeper vaults.',
+  },
+  {
+    id: 'captain',
+    name: 'Captain Roan',
+    line: 'Return with medals and the outposts will flourish again.',
+    journal: 'Roan promised to trade medals for gold the moment I recover them.',
+  },
 ];
 
 const STORY_BEATS = [
-  { id: 'arrival', text: 'Arrive in Aurora Plaza and speak with the townsfolk.' },
+  { id: 'arrival', text: 'Visit Radiant Hearth and meet the valley townsfolk.' },
   { id: 'first-dungeon', text: 'Clear your first dungeon to recover ancient plans.' },
-  { id: 'house-finished', text: 'Finish building your home in the heart of town.' },
+  { id: 'house-finished', text: 'Finish building your home overlooking Radiant Hearth.' },
   { id: 'boss-victory', text: 'Defeat a dungeon boss to secure the valley.' },
 ];
 
@@ -288,11 +425,11 @@ const ACHIEVEMENT_LIBRARY = [
 ];
 
 const GOALS = [
-  'Support Aurora Plaza by finishing your cozy home',
-  'Defeat a guardian deep within a dungeon',
-  'Trade glow shards with the valley shopkeepers',
+  'Support Radiant Hearth by finishing your cozy home',
+  'Chart a course through all four towns of the valley',
+  'Defeat a guardian deep within one of the five dungeons',
   'Collect timber and stone to help the townsfolk rebuild',
-  'Explore the sanctuary and calm the fireflies',
+  'Calm the sanctuary fireflies to restore the valley glow',
 ];
 
 function clamp(value, min, max) {
@@ -313,6 +450,18 @@ function randInt(min, max) {
 
 function pick(array) {
   return array[randInt(0, array.length - 1)];
+}
+
+function randomGold(range) {
+  return randInt(range[0], range[1]);
+}
+
+function cloneItem(id) {
+  const template = ITEM_LIBRARY[id];
+  if (!template) {
+    throw new Error(`Unknown item id: ${id}`);
+  }
+  return { ...template };
 }
 
 function vectorLength(v) {
@@ -502,7 +651,7 @@ class UIController {
     this.ui.skillPointsValue.textContent = `${points}`;
   }
 
-  setCurrency(value) {
+  setGold(value) {
     this.ui.currencyValue.textContent = `${value}`;
   }
 
@@ -577,7 +726,24 @@ class UIController {
     }
     for (const item of items) {
       const li = document.createElement('li');
-      li.innerHTML = `<strong>${item.name}</strong><br/>${item.description}`;
+      const typeMap = {
+        weapon: 'Weapon',
+        armor: 'Armour',
+        shield: 'Shield',
+        consumable: 'Consumable',
+        material: 'Material',
+        medal: 'Medal',
+      };
+      const typeLabel = item.type ? typeMap[item.type] ?? item.type : '';
+      const tag = typeLabel ? `<span class="item-tag">${typeLabel}</span>` : '';
+      const notes = [];
+      if (item.goldValue) {
+        notes.push(`Sell value: ${item.goldValue} gold`);
+      } else if (item.value && item.type === 'material') {
+        notes.push(`Trade value: ${item.value} gold`);
+      }
+      const noteHtml = notes.length > 0 ? `<p class="item-note">${notes.join(' · ')}</p>` : '';
+      li.innerHTML = `<div class="item-header"><strong>${item.name}</strong>${tag}</div><p>${item.description}</p>${noteHtml}`;
       this.ui.inventoryList.appendChild(li);
     }
   }
@@ -605,6 +771,10 @@ class UIController {
     this.ui.pauseMenu.setAttribute('aria-hidden', show ? 'false' : 'true');
   }
 
+  showStartMenu(show) {
+    this.ui.startMenu.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
   showLevelOverlay(show) {
     this.ui.levelOverlay.setAttribute('aria-hidden', show ? 'false' : 'true');
   }
@@ -617,7 +787,7 @@ class UIController {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'upgrade-option';
-      button.innerHTML = `<h3>${item.label}</h3><p>Cost: ${item.cost} shards</p>`;
+      button.innerHTML = `<h3>${item.label}</h3><p>Cost: ${item.cost} gold</p>`;
       button.addEventListener('click', () => onPurchase(item));
       this.ui.shopOptions.appendChild(button);
     }
@@ -754,6 +924,7 @@ class World {
     this.towns = [];
     this.dungeons = [];
     this.housePlots = [];
+    this.chests = [];
     this.enemySpawns = [];
   }
 
@@ -839,6 +1010,12 @@ class World {
     return this.housePlots.find((plot) => Math.hypot(plot.x - x, plot.y - y) < 1.2);
   }
 
+  getChestNear(x, y) {
+    return this.chests.find(
+      (chest) => !chest.opened && Math.hypot(chest.x - x, chest.y - y) < 1.1
+    );
+  }
+
   #generateTerrain() {
     const midY = this.height / 2;
     for (let y = 0; y < this.height; y += 1) {
@@ -905,39 +1082,72 @@ class World {
 
   #buildSettlements() {
     this.#buildTown({
-      name: 'Aurora Plaza',
+      name: 'Radiant Hearth',
       center: this.spawnPoint,
-      size: 6,
-      housePlots: 3,
-      shops: ['weapons', 'armory'],
-      npcs: ['mayor', 'artisan'],
+      size: 8,
+      housePlots: 4,
+      shops: ['weapons', 'armory', 'alchemy'],
+      npcs: ['mayor', 'artisan', 'sage'],
+      chests: 2,
+      hasHome: true,
+      tier: 'capital',
     });
 
-    const secondaryTownCenter = {
-      x: clamp(this.spawnPoint.x + randInt(-18, 18), 8, this.width - 8),
-      y: clamp(this.spawnPoint.y + randInt(12, 20), 8, this.height - 8),
-    };
+    const additionalTowns = [
+      {
+        name: 'Glimmergrove Market',
+        offset: { x: -28, y: -12 },
+        size: 6,
+        housePlots: 2,
+        shops: ['alchemy'],
+        npcs: ['scout', 'sage'],
+        chests: 1,
+      },
+      {
+        name: 'Sunspire Outpost',
+        offset: { x: 28, y: -10 },
+        size: 5,
+        housePlots: 1,
+        shops: ['weapons'],
+        npcs: ['captain'],
+        chests: 1,
+      },
+      {
+        name: 'Duskridge Hollow',
+        offset: { x: -20, y: 26 },
+        size: 6,
+        housePlots: 2,
+        shops: ['armory'],
+        npcs: ['artisan'],
+        chests: 1,
+      },
+    ];
 
-    this.#carvePath(
-      this.spawnPoint.x,
-      this.spawnPoint.y + 1,
-      secondaryTownCenter.x,
-      secondaryTownCenter.y,
-      2
-    );
-
-    this.#buildTown({
-      name: 'Glinting Market',
-      center: secondaryTownCenter,
-      size: 5,
-      housePlots: 1,
-      shops: ['alchemy'],
-      npcs: ['scout'],
-    });
+    let lastTownCenter = this.spawnPoint;
+    for (const config of additionalTowns) {
+      const center = {
+        x: clamp(this.spawnPoint.x + config.offset.x, 8, this.width - 8),
+        y: clamp(this.spawnPoint.y + config.offset.y, 8, this.height - 8),
+      };
+      this.#carvePath(this.spawnPoint.x, this.spawnPoint.y, center.x, center.y, 2);
+      if (lastTownCenter !== this.spawnPoint) {
+        this.#carvePath(lastTownCenter.x, lastTownCenter.y, center.x, center.y, 1);
+      }
+      this.#buildTown({
+        name: config.name,
+        center,
+        size: config.size,
+        housePlots: config.housePlots,
+        shops: config.shops,
+        npcs: config.npcs,
+        chests: config.chests,
+      });
+      lastTownCenter = center;
+    }
 
     const sanctuaryCenter = {
-      x: clamp(this.spawnPoint.x - randInt(14, 20), 6, this.width - 6),
-      y: clamp(this.spawnPoint.y - randInt(14, 20), 6, this.height - 6),
+      x: clamp(this.spawnPoint.x - randInt(18, 24), 6, this.width - 6),
+      y: clamp(this.spawnPoint.y - randInt(18, 24), 6, this.height - 6),
     };
     this.#carvePath(this.spawnPoint.x, this.spawnPoint.y, sanctuaryCenter.x, sanctuaryCenter.y, 1);
     for (let y = -3; y <= 3; y += 1) {
@@ -952,13 +1162,26 @@ class World {
     this.lamps.push({ x: sanctuaryCenter.x + 0.5, y: sanctuaryCenter.y + 0.4 });
   }
 
-  #buildTown({ name, center, size, housePlots, shops, npcs }) {
+  #buildTown({
+    name,
+    center,
+    size,
+    housePlots,
+    shops,
+    npcs,
+    chests = 0,
+    hasHome = false,
+    tier = 'town',
+  }) {
     const bounds = {
       x1: clamp(center.x - size, 2, this.width - 3),
       y1: clamp(center.y - size, 2, this.height - 3),
       x2: clamp(center.x + size, 2, this.width - 3),
       y2: clamp(center.y + size, 2, this.height - 3),
     };
+
+    const occupied = new Set();
+    const mark = (x, y) => occupied.add(`${x},${y}`);
 
     for (let y = bounds.y1; y <= bounds.y2; y += 1) {
       for (let x = bounds.x1; x <= bounds.x2; x += 1) {
@@ -972,16 +1195,40 @@ class World {
       }
     }
 
-    for (let i = 0; i < housePlots; i += 1) {
-      const offsetX = randInt(-size + 1, size - 1);
-      const offsetY = randInt(-size + 1, size - 1);
-      const plot = { x: center.x + offsetX, y: center.y + offsetY, progress: 0 };
-      this.housePlots.push(plot);
-      this.decorations.push({ x: plot.x, y: plot.y, type: 'house-frame' });
+    const plotCount = Math.max(0, housePlots - (hasHome ? 1 : 0));
+    if (hasHome) {
+      const hx = clamp(center.x + 1, bounds.x1 + 1, bounds.x2 - 1);
+      const hy = clamp(center.y + 1, bounds.y1 + 1, bounds.y2 - 1);
+      this.housePlots.push({ x: hx, y: hy, progress: 0, home: true });
+      this.decorations.push({ x: hx, y: hy, type: 'house-frame' });
+      mark(hx, hy);
     }
 
+    let attempts = 0;
+    let plotsPlaced = 0;
+    while (plotsPlaced < plotCount && attempts < 200) {
+      attempts += 1;
+      const px = clamp(
+        center.x + randInt(-size + 1, size - 1),
+        bounds.x1 + 1,
+        bounds.x2 - 1
+      );
+      const py = clamp(
+        center.y + randInt(-size + 1, size - 1),
+        bounds.y1 + 1,
+        bounds.y2 - 1
+      );
+      const key = `${px},${py}`;
+      if (occupied.has(key)) continue;
+      this.housePlots.push({ x: px, y: py, progress: 0 });
+      this.decorations.push({ x: px, y: py, type: 'house-frame' });
+      mark(px, py);
+      plotsPlaced += 1;
+    }
+
+    const farmlandRows = tier === 'capital' ? 4 : 3;
     for (let x = bounds.x1 - 2; x <= bounds.x2 + 2; x += 1) {
-      for (let y = bounds.y2 + 1; y <= bounds.y2 + 3; y += 1) {
+      for (let y = bounds.y2 + 1; y <= bounds.y2 + farmlandRows; y += 1) {
         this.#setTile(x, y, 'farmland', 'town');
         if (Math.random() < 0.35) {
           this.decorations.push({ x, y, type: 'crop' });
@@ -992,37 +1239,88 @@ class World {
     for (const shopId of shops) {
       const libraryEntry = SHOP_LIBRARY.find((item) => item.id === shopId);
       if (!libraryEntry) continue;
-      const sx = clamp(center.x + randInt(-size + 1, size - 1), bounds.x1 + 1, bounds.x2 - 1);
-      const sy = clamp(center.y + randInt(-size + 1, size - 1), bounds.y1 + 1, bounds.y2 - 1);
-      this.shops.push({
-        id: libraryEntry.id,
-        name: libraryEntry.name,
-        description: libraryEntry.description,
-        stock: libraryEntry.stock.map((item) => ({ ...item })),
-        x: sx + 0.5,
-        y: sy + 0.5,
-      });
-      this.decorations.push({ x: sx, y: sy, type: 'market' });
-      this.lamps.push({ x: sx + 0.5, y: sy - 0.3 });
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const sx = clamp(
+          center.x + randInt(-size + 1, size - 1),
+          bounds.x1 + 1,
+          bounds.x2 - 1
+        );
+        const sy = clamp(
+          center.y + randInt(-size + 1, size - 1),
+          bounds.y1 + 1,
+          bounds.y2 - 1
+        );
+        const key = `${sx},${sy}`;
+        if (occupied.has(key)) continue;
+        this.shops.push({
+          id: libraryEntry.id,
+          name: libraryEntry.name,
+          description: libraryEntry.description,
+          stock: libraryEntry.stock.map((item) => ({ ...item })),
+          x: sx + 0.5,
+          y: sy + 0.5,
+        });
+        this.decorations.push({ x: sx, y: sy, type: 'market' });
+        this.lamps.push({ x: sx + 0.5, y: sy - 0.3 });
+        mark(sx, sy);
+        break;
+      }
     }
 
     for (const npcId of npcs) {
       const info = NPC_LIBRARY.find((entry) => entry.id === npcId);
       if (!info) continue;
-      const nx = clamp(center.x + randInt(-size + 1, size - 1), bounds.x1 + 1, bounds.x2 - 1);
-      const ny = clamp(center.y + randInt(-size + 1, size - 1), bounds.y1 + 1, bounds.y2 - 1);
-      this.npcs.push({
-        id: info.id,
-        name: info.name,
-        line: info.line,
-        journal: info.journal,
-        x: nx + 0.5,
-        y: ny + 0.5,
-        color: pick(SCENERY_COLORS.npcCloak),
-      });
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const nx = clamp(
+          center.x + randInt(-size + 1, size - 1),
+          bounds.x1 + 1,
+          bounds.x2 - 1
+        );
+        const ny = clamp(
+          center.y + randInt(-size + 1, size - 1),
+          bounds.y1 + 1,
+          bounds.y2 - 1
+        );
+        if (occupied.has(`${nx},${ny}`)) continue;
+        this.npcs.push({
+          id: info.id,
+          name: info.name,
+          line: info.line,
+          journal: info.journal,
+          x: nx + 0.5,
+          y: ny + 0.5,
+          color: pick(SCENERY_COLORS.npcCloak),
+        });
+        mark(nx, ny);
+        break;
+      }
     }
 
-    this.towns.push({ name, bounds, center });
+    for (let i = 0; i < chests; i += 1) {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const cx = clamp(
+          center.x + randInt(-size + 1, size - 1),
+          bounds.x1 + 1,
+          bounds.x2 - 1
+        );
+        const cy = clamp(
+          center.y + randInt(-size + 1, size - 1),
+          bounds.y1 + 1,
+          bounds.y2 - 1
+        );
+        const key = `${cx},${cy}`;
+        if (occupied.has(key)) continue;
+        this.#placeChestAt(cx, cy, tier === 'capital' ? 'capital' : 'town');
+        mark(cx, cy);
+        break;
+      }
+    }
+
+    this.towns.push({ name, bounds, center, tier });
+  }
+
+  #placeChestAt(x, y, tier = 'town') {
+    this.chests.push({ x: x + 0.5, y: y + 0.5, opened: false, tier });
   }
 
   #carveDungeons() {
@@ -1030,21 +1328,52 @@ class World {
       {
         name: 'Duskwater Catacombs',
         center: {
-          x: clamp(this.spawnPoint.x + randInt(-24, -16), 6, this.width - 6),
-          y: clamp(this.spawnPoint.y + randInt(14, 24), 6, this.height - 6),
+          x: clamp(this.spawnPoint.x + randInt(-28, -18), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y + randInt(18, 26), 6, this.height - 6),
         },
+        size: randInt(7, 9),
+        chests: 2,
       },
       {
         name: 'Emberfen Gate',
         center: {
-          x: clamp(this.spawnPoint.x + randInt(18, 28), 6, this.width - 6),
-          y: clamp(this.spawnPoint.y - randInt(16, 24), 6, this.height - 6),
+          x: clamp(this.spawnPoint.x + randInt(22, 32), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y - randInt(18, 26), 6, this.height - 6),
         },
+        size: randInt(7, 9),
+        chests: 2,
+      },
+      {
+        name: 'Starfall Observatory',
+        center: {
+          x: clamp(this.spawnPoint.x + randInt(-6, 14), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y + randInt(30, 40), 6, this.height - 6),
+        },
+        size: randInt(8, 10),
+        chests: 2,
+      },
+      {
+        name: 'Thornhollow Warrens',
+        center: {
+          x: clamp(this.spawnPoint.x - randInt(32, 42), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y + randInt(6, 18), 6, this.height - 6),
+        },
+        size: randInt(7, 9),
+        chests: 2,
+      },
+      {
+        name: 'Glimmerdeep Vault',
+        center: {
+          x: clamp(this.spawnPoint.x + randInt(24, 36), 6, this.width - 6),
+          y: clamp(this.spawnPoint.y + randInt(-32, -22), 6, this.height - 6),
+        },
+        size: randInt(9, 10),
+        chests: 3,
       },
     ];
 
     for (const config of dungeonConfigs) {
-      const size = randInt(6, 8);
+      const size = config.size ?? randInt(6, 8);
       const bounds = {
         x1: clamp(config.center.x - size, 3, this.width - 4),
         y1: clamp(config.center.y - size, 3, this.height - 4),
@@ -1079,6 +1408,17 @@ class World {
         boss: { spawned: false, defeated: false },
         entrance: { x: entranceX + 0.5, y: entranceY + 0.5 },
       });
+
+      for (let i = 0; i < (config.chests ?? 1); i += 1) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const cx = randInt(bounds.x1 + 1, bounds.x2 - 1);
+          const cy = randInt(bounds.y1 + 1, bounds.y2 - 1);
+          const tile = this.getTile(cx, cy);
+          if (tile.type !== 'dungeonFloor') continue;
+          this.#placeChestAt(cx, cy, 'dungeon');
+          break;
+        }
+      }
 
       this.signs.push({ x: entranceX, y: entranceY - 1, text: config.name });
     }
@@ -1121,9 +1461,13 @@ class World {
   #placeSignsAndClues() {
     const clues = [];
     for (const town of this.towns) {
+      const description =
+        town.tier === 'capital'
+          ? 'The bustling heart of the valley and the site of your home.'
+          : 'A peaceful haven where you can trade, rest, and continue building.';
       clues.push({
         title: town.name,
-        description: 'A peaceful haven where you can trade, rest, and continue building.',
+        description,
       });
     }
 
@@ -1140,7 +1484,7 @@ class World {
     });
 
     clues.push({
-      title: 'Home Plot',
+      title: 'Radiant Hearth Home',
       description: 'Bring timber and stone from dungeons to finish building your valley home.',
     });
 
@@ -1159,6 +1503,7 @@ function createProjectile({
   friendly,
   spread = 0,
   slowField = false,
+  penetration = 0,
 }) {
   const angle = Math.atan2(direction.y, direction.x) + spread;
   return {
@@ -1171,6 +1516,7 @@ function createProjectile({
     age: 0,
     friendly,
     slowField,
+    penetration,
   };
 }
 
@@ -1188,7 +1534,9 @@ export class RoguelikeGame {
     this.log = new EventLog(ui.log);
     this.particles = new ParticleSystem();
     this.lastTime = 0;
-    this.state = 'loading';
+    this.state = 'menu';
+    this.started = false;
+    this.loopRunning = false;
     this.timeOfDay = DAY_NIGHT_DURATION * 0.4;
     this.camera = { x: 0, y: 0 };
     this.stars = Array.from({ length: SKY_STARS }, () => ({
@@ -1212,7 +1560,7 @@ export class RoguelikeGame {
     this.upgradePool = [...UPGRADE_LIBRARY];
     this.achievements = new Set();
     this.goal = pick(GOALS);
-    this.currency = 0;
+    this.gold = 0;
     this.inventory = [];
     this.journalEntries = [];
     this.completedStoryBeats = new Set();
@@ -1225,18 +1573,21 @@ export class RoguelikeGame {
     this.nearbyNpc = null;
     this.nearbyPlot = null;
     this.lastZoneName = null;
+
+    this.#startLoop();
   }
 
   start() {
+    this.#startLoop();
+    this.started = true;
     this.restart();
-    this.state = 'running';
-    requestAnimationFrame((time) => this.#loop(time));
   }
 
   restart() {
     this.state = 'running';
     this.ui.showMenu(false);
     this.ui.showLevelOverlay(false);
+    this.ui.showStartMenu(false);
     this.ui.clearUpgradeChoices();
     this.upgradeChoices = [];
     this.pendingSkillPoints = 0;
@@ -1250,7 +1601,7 @@ export class RoguelikeGame {
       upgrades: 0,
       timeAlive: 0,
     };
-    this.currency = 0;
+    this.gold = 0;
     this.inventory = [];
     this.journalEntries = [];
     this.completedStoryBeats = new Set();
@@ -1267,11 +1618,18 @@ export class RoguelikeGame {
     this.nearbyShop = null;
     this.nearbyNpc = null;
     this.nearbyPlot = null;
+    this.nearbyChest = null;
     this.timeOfDay = DAY_NIGHT_DURATION * 0.4;
 
     this.world = World.generate(
-      Math.floor(this.canvas.width / TILE_SIZE) + WORLD_PADDING_TILES,
-      Math.floor(this.canvas.height / TILE_SIZE) + WORLD_PADDING_TILES
+      Math.max(
+        Math.floor(this.canvas.width / TILE_SIZE) + WORLD_PADDING_TILES,
+        MIN_WORLD_WIDTH_TILES
+      ),
+      Math.max(
+        Math.floor(this.canvas.height / TILE_SIZE) + WORLD_PADDING_TILES,
+        MIN_WORLD_HEIGHT_TILES
+      )
     );
 
     this.player = {
@@ -1296,6 +1654,7 @@ export class RoguelikeGame {
       dashTrail: false,
       glowShots: false,
       spiritWalk: false,
+      piercingShots: false,
       shield: null,
       onLevelUpRegen: 0,
       speed: PLAYER_BASE_SPEED,
@@ -1324,7 +1683,7 @@ export class RoguelikeGame {
     this.ui.setAchievements([]);
     this.ui.setGoal(this.goal);
     this.ui.setMapClues(this.world.mapClues);
-    this.ui.setCurrency(this.currency);
+    this.ui.setGold(this.gold);
     this.ui.setInventory(this.inventory);
     this.ui.setJournal(this.journalEntries);
     this.ui.setStory(this.currentStory.text);
@@ -1333,10 +1692,19 @@ export class RoguelikeGame {
     this.ui.setTownProgress(this.houseProject.label, 0);
     this.ui.hideShop();
     this.ui.clearPrompt();
-    this.log.push('Aurora Plaza hums with possibility. Press F to chat, trade, and build.');
+    this.log.push('Radiant Hearth hums with possibility. Press F to chat, trade, and build.');
+
+    this.lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
+  showStartMenu(show) {
+    this.ui.showStartMenu(show);
   }
 
   handleResize() {
+    if (!this.started) {
+      return;
+    }
     this.restart();
   }
 
@@ -1387,12 +1755,12 @@ export class RoguelikeGame {
 
   #purchaseShopItem(shop, item) {
     if (!this.activeShop || this.activeShop !== shop) return;
-    if (this.currency < item.cost) {
-      this.ui.showToast('Not enough glow shards. Explore dungeons for more.');
+    if (this.gold < item.cost) {
+      this.ui.showToast('Not enough gold. Explore dungeons for more.');
       return;
     }
-    this.currency -= item.cost;
-    this.ui.setCurrency(this.currency);
+    this.gold -= item.cost;
+    this.ui.setGold(this.gold);
     item.effect(this.player);
     this.ui.setHealth(this.player.health, this.player.maxHealth);
     this.ui.showToast(`Purchased ${item.label}!`);
@@ -1409,6 +1777,12 @@ export class RoguelikeGame {
     const shop = this.world.getShopNear(this.player.x, this.player.y);
     if (shop) {
       this.openShop(shop);
+      return;
+    }
+
+    const chest = this.world.getChestNear(this.player.x, this.player.y);
+    if (chest) {
+      this.#openChest(chest);
       return;
     }
 
@@ -1479,6 +1853,39 @@ export class RoguelikeGame {
     }
   }
 
+  #openChest(chest) {
+    if (chest.opened) {
+      this.ui.showToast('The chest has already been emptied.');
+      return;
+    }
+    chest.opened = true;
+    this.ui.showToast('Chest opened!');
+    this.log.push('You crack open the chest and collect its trove.');
+    this.#spawnChestLoot(chest);
+    this.nearbyChest = null;
+    this.ui.clearPrompt();
+  }
+
+  #spawnChestLoot(chest) {
+    const tier = chest.tier ?? 'town';
+    const table = CHEST_LOOT_TABLES[tier] ?? CHEST_LOOT_TABLES.town;
+    const dropCount = tier === 'capital' ? 3 : tier === 'dungeon' ? 3 : 2;
+    for (let i = 0; i < dropCount; i += 1) {
+      this.#spawnLootItem(pick(table), chest.x, chest.y, 0.55, 24);
+    }
+    const goldRange =
+      tier === 'capital'
+        ? GOLD_RANGES.chestCapital
+        : tier === 'dungeon'
+        ? GOLD_RANGES.chestDungeon
+        : GOLD_RANGES.chestTown;
+    this.#dropGold(chest.x, chest.y, randomGold(goldRange), 0.45);
+    if (tier !== 'town') {
+      const rareId = tier === 'capital' ? 'moondrop-elixir' : 'sun-elixir';
+      this.#spawnLootItem(rareId, chest.x, chest.y, 0.5, 24);
+    }
+  }
+
   #advanceStory(id) {
     if (this.completedStoryBeats.has(id)) return;
     this.completedStoryBeats.add(id);
@@ -1502,6 +1909,15 @@ export class RoguelikeGame {
 
     this.#render();
     requestAnimationFrame((next) => this.#loop(next));
+  }
+
+  #startLoop() {
+    if (this.loopRunning) {
+      return;
+    }
+    this.loopRunning = true;
+    this.lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    requestAnimationFrame((time) => this.#loop(time));
   }
 
   #update(dt) {
@@ -1600,6 +2016,7 @@ export class RoguelikeGame {
 
     const shop = this.world.getShopNear(this.player.x, this.player.y);
     const npc = this.world.getNpcNear(this.player.x, this.player.y);
+    const chest = this.world.getChestNear(this.player.x, this.player.y);
     const plot = this.world.getHousePlotNear(this.player.x, this.player.y);
 
     if (
@@ -1611,6 +2028,7 @@ export class RoguelikeGame {
 
     this.nearbyShop = shop;
     this.nearbyNpc = npc;
+    this.nearbyChest = chest;
     this.nearbyPlot = plot;
 
     let prompt = '';
@@ -1618,6 +2036,8 @@ export class RoguelikeGame {
       prompt = 'Press F to leave the shop';
     } else if (shop) {
       prompt = `Press F to trade with ${shop.name}`;
+    } else if (chest && !chest.opened) {
+      prompt = 'Press F to open the chest';
     } else if (plot && this.houseProject && !this.houseProject.completed) {
       const hasMaterials = this.inventory.some(
         (item) => item.id === 'timber' || item.id === 'stone'
@@ -1707,6 +2127,7 @@ export class RoguelikeGame {
       lifetime: this.player.projectileLifetime,
       friendly: true,
       slowField: this.player.glowShots,
+      penetration: this.player.piercingShots ? 1 : 0,
     });
 
     this.projectiles.push(baseProjectile);
@@ -1724,6 +2145,7 @@ export class RoguelikeGame {
           friendly: true,
           spread: spreadAngle,
           slowField: this.player.glowShots,
+          penetration: this.player.piercingShots ? 1 : 0,
         })
       );
     }
@@ -1793,12 +2215,11 @@ export class RoguelikeGame {
         continue;
       }
 
-      let hitEnemy = false;
+      let consumed = false;
       for (const enemy of this.enemies) {
         const distance = Math.hypot(enemy.x - projectile.x, enemy.y - projectile.y);
         if (distance < 0.6) {
           enemy.health -= projectile.damage;
-          hitEnemy = true;
           this.particles.spawn({ x: enemy.x, y: enemy.y }, {
             color: '#fbbf24',
             radius: 0.18,
@@ -1809,11 +2230,16 @@ export class RoguelikeGame {
           if (projectile.slowField) {
             this.#spawnSlowField(enemy.x, enemy.y);
           }
+          if (projectile.penetration && projectile.penetration > 0) {
+            projectile.penetration -= 1;
+            continue;
+          }
+          consumed = true;
           break;
         }
       }
 
-      if (!hitEnemy && projectile.age < projectile.lifetime) {
+      if (!consumed && projectile.age < projectile.lifetime) {
         newProjectiles.push(projectile);
       }
     }
@@ -1836,6 +2262,32 @@ export class RoguelikeGame {
     };
     if (!this.slowFields) this.slowFields = [];
     this.slowFields.push(field);
+  }
+
+  #dropGold(x, y, amount, scatter = 0.45) {
+    if (amount <= 0) return;
+    this.pickups.push({
+      kind: 'gold',
+      x: x + randRange(-scatter, scatter),
+      y: y + randRange(-scatter, scatter),
+      vx: randRange(-0.25, 0.25),
+      vy: randRange(-0.25, 0.25),
+      amount: Math.round(amount),
+      life: 18,
+    });
+  }
+
+  #spawnLootItem(itemOrId, x, y, scatter = 0.4, life = 18) {
+    const item = typeof itemOrId === 'string' ? cloneItem(itemOrId) : { ...itemOrId };
+    this.pickups.push({
+      kind: 'loot',
+      x: x + randRange(-scatter, scatter),
+      y: y + randRange(-scatter, scatter),
+      vx: randRange(-0.3, 0.3),
+      vy: randRange(-0.3, 0.3),
+      item,
+      life,
+    });
   }
 
   #updateEnemyProjectiles(dt) {
@@ -1968,6 +2420,12 @@ export class RoguelikeGame {
           this.#checkLevelUp();
         } else if (pickup.kind === 'loot' && pickup.item) {
           this.#collectLoot(pickup.item);
+        } else if (pickup.kind === 'gold') {
+          const amount = Math.max(1, Math.round(pickup.amount ?? 0));
+          this.gold += amount;
+          this.ui.setGold(this.gold);
+          this.ui.showToast(`+${amount} gold`);
+          this.log.push('You gather glittering coins.');
         }
         continue;
       }
@@ -1990,20 +2448,56 @@ export class RoguelikeGame {
   }
 
   #collectLoot(item) {
-    if (item.id === 'lumen-shard') {
-      this.currency += item.value;
-      this.ui.setCurrency(this.currency);
-      this.ui.showToast(`+${item.value} glow shards`);
-      this.log.push('You gather shimmering glow shards.');
-    } else {
-      this.inventory.push(item);
-      this.ui.setInventory(this.inventory);
-      this.ui.showToast(`${item.name} added to your satchel.`);
-      if (item.id === 'silk') {
-        this.log.push('The shimmering silk might delight the artisans in town.');
-      } else {
-        this.log.push(`You stash ${item.name} for later use.`);
+    if (item.type === 'medal' && item.goldValue) {
+      const amount = Math.round(item.goldValue);
+      this.gold += amount;
+      this.ui.setGold(this.gold);
+      this.ui.showToast(`+${amount} gold (medal traded)`);
+      this.log.push('You trade the radiant medal for a pouch of gold.');
+      return;
+    }
+
+    if (item.consumedOnPickup) {
+      if (item.heal) {
+        const healed = Math.round(
+          Math.max(0, Math.min(item.heal, this.player.maxHealth - this.player.health))
+        );
+        this.player.health = clamp(this.player.health + item.heal, 0, this.player.maxHealth);
+        this.ui.setHealth(this.player.health, this.player.maxHealth);
+        if (healed > 0) {
+          this.ui.showToast(`Restored ${healed} health`);
+        }
       }
+      if (typeof item.onAcquire === 'function') {
+        item.onAcquire(this.player);
+      }
+      this.ui.setHealth(this.player.health, this.player.maxHealth);
+      this.log.push(`You consume ${item.name}.`);
+      return;
+    }
+
+    const alreadyOwned = this.inventory.some((existing) => existing.id === item.id);
+    if (alreadyOwned && item.type !== 'material') {
+      const stipend = item.goldValue ?? randInt(18, 32);
+      this.gold += stipend;
+      this.ui.setGold(this.gold);
+      this.ui.showToast(`Duplicate ${item.name} traded for ${stipend} gold`);
+      this.log.push(`You exchange a spare ${item.name} for supplies.`);
+      return;
+    }
+
+    if (typeof item.onAcquire === 'function') {
+      item.onAcquire(this.player);
+      this.ui.setHealth(this.player.health, this.player.maxHealth);
+    }
+
+    this.inventory.push(item);
+    this.ui.setInventory(this.inventory);
+    this.ui.showToast(`${item.name} added to your satchel.`);
+    if (item.type === 'material') {
+      this.log.push(`You gather ${item.name.toLowerCase()} for future building.`);
+    } else {
+      this.log.push(`You attune to ${item.name}.`);
     }
   }
 
@@ -2101,18 +2595,21 @@ export class RoguelikeGame {
       });
     }
 
-    const lootChance = enemy.boss ? 1 : 0.38;
-    if (Math.random() < lootChance) {
-      const loot = { ...pick(LOOT_TABLE) };
-      this.pickups.push({
-        kind: 'loot',
-        x: enemy.x + randRange(-0.4, 0.4),
-        y: enemy.y + randRange(-0.4, 0.4),
-        vx: randRange(-0.3, 0.3),
-        vy: randRange(-0.3, 0.3),
-        item: loot,
-        life: 16,
-      });
+    const goldRange = enemy.boss ? GOLD_RANGES.boss : GOLD_RANGES.mob;
+    this.#dropGold(enemy.x, enemy.y, randomGold(goldRange), enemy.boss ? 0.55 : 0.4);
+
+    if (enemy.boss) {
+      this.#spawnLootItem('moondrop-elixir', enemy.x, enemy.y, 0.45, 24);
+      for (let i = 0; i < 2; i += 1) {
+        this.#spawnLootItem(pick(BOSS_LOOT_TABLE), enemy.x, enemy.y, 0.55, 26);
+      }
+    } else {
+      if (Math.random() < 0.45) {
+        this.#spawnLootItem(pick(RESOURCE_DROPS), enemy.x, enemy.y);
+      }
+      if (Math.random() < 0.3) {
+        this.#spawnLootItem('sun-elixir', enemy.x, enemy.y, 0.35, 18);
+      }
     }
     this.particles.spawn({ x: enemy.x, y: enemy.y }, {
       color: '#fbbf24',
@@ -2190,11 +2687,16 @@ export class RoguelikeGame {
     const ctx = this.context;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.#drawSky(ctx);
+    if (!this.world) {
+      this.#drawAtmosphere(ctx);
+      return;
+    }
     const view = this.#getCameraView();
     ctx.save();
     ctx.translate(-view.offsetX * TILE_SIZE, -view.offsetY * TILE_SIZE);
     this.#drawWorld(ctx, view);
     this.#drawDecorations(ctx, view);
+    this.#drawChests(ctx, view);
     this.#drawNpcs(ctx, view);
     this.#drawSigns(ctx, view);
     this.#drawPlayer(ctx, view);
@@ -2503,6 +3005,43 @@ export class RoguelikeGame {
     }
   }
 
+  #drawChests(ctx, view) {
+    for (const chest of this.world.chests) {
+      if (
+        chest.x < view.offsetX - 2 ||
+        chest.x > view.offsetX + view.viewWidth + 2 ||
+        chest.y < view.offsetY - 2 ||
+        chest.y > view.offsetY + view.viewHeight + 2
+      ) {
+        continue;
+      }
+      const screenX = chest.x * TILE_SIZE;
+      const screenY = chest.y * TILE_SIZE;
+      if (!chest.opened) {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.2)';
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, TILE_SIZE * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.save();
+      ctx.translate(screenX, screenY);
+      const bodyColor = chest.opened ? 'rgba(148, 163, 184, 0.45)' : '#f59e0b';
+      ctx.fillStyle = bodyColor;
+      ctx.fillRect(-TILE_SIZE * 0.24, -TILE_SIZE * 0.05, TILE_SIZE * 0.48, TILE_SIZE * 0.3);
+      ctx.fillRect(-TILE_SIZE * 0.2, -TILE_SIZE * 0.22, TILE_SIZE * 0.4, TILE_SIZE * 0.18);
+      if (!chest.opened) {
+        ctx.fillStyle = '#92400e';
+        ctx.fillRect(-TILE_SIZE * 0.24, -TILE_SIZE * 0.05, TILE_SIZE * 0.48, TILE_SIZE * 0.06);
+        ctx.fillStyle = '#fcd34d';
+        ctx.fillRect(-TILE_SIZE * 0.02, -TILE_SIZE * 0.05, TILE_SIZE * 0.04, TILE_SIZE * 0.16);
+      } else {
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.35)';
+        ctx.fillRect(-TILE_SIZE * 0.2, -TILE_SIZE * 0.22, TILE_SIZE * 0.4, TILE_SIZE * 0.06);
+      }
+      ctx.restore();
+    }
+  }
+
   #drawNpcs(ctx, view) {
     for (const npc of this.world.npcs) {
       if (
@@ -2703,12 +3242,23 @@ export class RoguelikeGame {
       }
       const screenX = pickup.x * TILE_SIZE;
       const screenY = pickup.y * TILE_SIZE;
+      if (pickup.kind === 'gold') {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - TILE_SIZE * 0.2);
+        ctx.lineTo(screenX + TILE_SIZE * 0.2, screenY);
+        ctx.lineTo(screenX, screenY + TILE_SIZE * 0.2);
+        ctx.lineTo(screenX - TILE_SIZE * 0.2, screenY);
+        ctx.closePath();
+        ctx.fill();
+        continue;
+      }
+      ctx.beginPath();
       if (pickup.kind === 'loot') {
         ctx.fillStyle = 'rgba(129, 140, 248, 0.85)';
       } else {
-        ctx.fillStyle = 'rgba(251, 191, 36, 0.8)';
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
       }
-      ctx.beginPath();
       ctx.arc(screenX, screenY, TILE_SIZE * 0.18, 0, Math.PI * 2);
       ctx.fill();
     }
