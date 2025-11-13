@@ -43,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
     mapInfo: document.getElementById('map-info'),
     storyline: document.getElementById('storyline'),
     npcJournal: document.getElementById('npc-journal'),
+    startMenu: document.getElementById('start-menu'),
+    playButton: document.getElementById('play-button'),
     pauseMenu: document.getElementById('pause-menu'),
     resumeButton: document.getElementById('resume-button'),
     restartButton: document.getElementById('restart-button'),
@@ -67,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
   resizeCanvas(canvas);
 
   const game = new RoguelikeGame({ canvas, ui });
-  game.start();
+  game.showStartMenu(true);
 
   window.addEventListener('resize', () => {
     if (resizeCanvas(canvas)) {
@@ -75,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  ui.playButton.addEventListener('click', () => game.start());
   ui.resumeButton.addEventListener('click', () => game.resume());
   ui.restartButton.addEventListener('click', () => game.restart());
   ui.leaveShop.addEventListener('click', () => game.leaveShop());

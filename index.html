@@ -20,7 +20,7 @@
         <p class="hud-subtitle">
           Explore the valley towns, brave the dungeons, and help rebuild the world.
           Move with WASD, aim with the arrow keys, dash with E, shoot with Space,
-          interact with F, and open the menu with Escape.
+          interact with F to speak, trade, or open chests, and open the menu with Escape.
         </p>
         <div class="hud-bars">
           <div class="meter" role="presentation">
@@ -61,7 +61,7 @@
           <span id="skill-points" class="hud-value">0</span>
         </div>
         <div class="hud-inline">
-          <span>Glow Shards:</span>
+          <span>Gold:</span>
           <span id="currency" class="hud-value">0</span>
         </div>
         <div class="hud-inline">
@@ -125,6 +125,27 @@
         </section>
       </section>
 
+      <div id="start-menu" class="overlay overlay--start" aria-hidden="false">
+        <div class="overlay-card" role="dialog" aria-modal="true" aria-label="Start menu">
+          <h2>Welcome back, wanderer</h2>
+          <p>
+            Radiant Hearth now anchors a sprawling valley filled with four bustling towns,
+            hidden dungeons, and treasure-filled chests. Gather your courage and set out.
+          </p>
+          <div class="overlay-actions">
+            <button id="play-button" class="button">Play</button>
+          </div>
+          <div class="overlay-footer">
+            <p>Highlights</p>
+            <ul>
+              <li>Open chests with <strong>F</strong> to claim powerful gear.</li>
+              <li>Defeat foes for gold and restorative elixirs.</li>
+              <li>Visit your home plot in Radiant Hearth to continue building.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <div id="pause-menu" class="overlay overlay--menu" aria-hidden="true">
         <div class="overlay-card" role="dialog" aria-modal="true" aria-label="Game menu">
           <h2>Paused</h2>
@@ -140,7 +161,7 @@
               <li>Aim: Arrow Keys</li>
               <li>Shoot: Space</li>
               <li>Dash: E</li>
-              <li>Interact: F</li>
+              <li>Interact &amp; Open Chests: F</li>
               <li>Menu: Escape</li>
             </ul>
           </div>
